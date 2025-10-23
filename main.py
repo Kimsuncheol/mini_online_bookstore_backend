@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.utils.firebase_config import init_firebase
 from app.services.member_service import get_member_service
+from app.routers import websocket
 
 
 @asynccontextmanager
@@ -21,6 +22,9 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Mini Online Bookstore Backend", version="1.0.0", lifespan=lifespan)
+
+# Include WebSocket router
+app.include_router(websocket.router)
 
 
 @app.get("/")

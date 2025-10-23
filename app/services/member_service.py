@@ -4,7 +4,7 @@ Member Service
 Provides business logic and database operations for managing members.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 from google.cloud import firestore
 from google.cloud.firestore import DocumentReference, DocumentSnapshot
@@ -19,7 +19,7 @@ class MemberService:
 
     def __init__(self):
         """Initialize the member service with Firestore client."""
-        self.db: firestore.Client = get_firestore_client()
+        self.db: Any = get_firestore_client()
 
     def fetch_user_by_id(self, member_id: str) -> Optional[Member]:
         """

@@ -8,10 +8,11 @@ It provides a centralized way to initialize Firebase app and access Firestore da
 import os
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 import firebase_admin
 from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
+from app.utils.mock_firestore import MockFirestore
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,7 +25,16 @@ class FirebaseConfig:
     """
 
     _app: Optional[firebase_admin.App] = None
-    _db: Optional[firestore.client.Client] = None
+    _db: Optional[Any] = None
+    _initialized: bool = False
+    _using_mock: bool = False
+
+    @staticmethod
+    def _is_truthy(value: Optional[str]) -> bool:
+        """Convert common truthy strings to boolean."""
+        if value is None:
+            return False
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
     @classmethod
     def initialize(cls) -> None:
@@ -39,45 +49,71 @@ class FirebaseConfig:
             ValueError: If neither credentials path nor required environment variables are provided
             FileNotFoundError: If the credentials file path is invalid
         """
-        if cls._app is not None:
+        if cls._initialized:
             print("Firebase app is already initialized")
             return
 
+        cls._db = None
+        cls._app = None
+        cls._using_mock = False
+
+        use_mock = cls._is_truthy(os.getenv("FIREBASE_USE_MOCK"))
         credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
 
-        if credentials_path:
-            # Method 1: Initialize using service account JSON file
-            if not os.path.exists(credentials_path):
-                raise FileNotFoundError(
-                    f"Firebase credentials file not found at: {credentials_path}"
-                )
+        try:
+            if not use_mock and credentials_path:
+                # Method 1: Initialize using service account JSON file
+                if not os.path.exists(credentials_path):
+                    raise FileNotFoundError(
+                        f"Firebase credentials file not found at: {credentials_path}"
+                    )
 
-            cred = credentials.Certificate(credentials_path)
-            cls._app = firebase_admin.initialize_app(cred)
-            print(f"✓ Firebase initialized using credentials file: {credentials_path}")
-        else:
-            # Method 2: Initialize using environment variables
-            service_account_config = cls._build_service_account_from_env()
-            if not service_account_config:
-                raise ValueError(
-                    "Firebase initialization failed. Please provide either:\n"
-                    "1. FIREBASE_CREDENTIALS_PATH environment variable pointing to a service account JSON file, or\n"
-                    "2. All required Firebase service account environment variables:\n"
-                    "   - FIREBASE_TYPE\n"
-                    "   - FIREBASE_PROJECT_ID\n"
-                    "   - FIREBASE_PRIVATE_KEY_ID\n"
-                    "   - FIREBASE_PRIVATE_KEY\n"
-                    "   - FIREBASE_CLIENT_EMAIL\n"
-                    "   - FIREBASE_CLIENT_ID\n"
-                    "   - FIREBASE_AUTH_URI\n"
-                    "   - FIREBASE_TOKEN_URI\n"
-                    "   - FIREBASE_AUTH_PROVIDER_X509_CERT_URL\n"
-                    "   - FIREBASE_CLIENT_X509_CERT_URL"
-                )
+                cred = credentials.Certificate(credentials_path)
+                cls._app = firebase_admin.initialize_app(cred)
+                cls._db = firestore.client()
+                print(f"✓ Firebase initialized using credentials file: {credentials_path}")
+            elif not use_mock:
+                # Method 2: Initialize using environment variables
+                service_account_config = cls._build_service_account_from_env()
+                if not service_account_config:
+                    raise ValueError(
+                        "Firebase initialization failed. Please provide either:\n"
+                        "1. FIREBASE_CREDENTIALS_PATH environment variable pointing to a service account JSON file, or\n"
+                        "2. All required Firebase service account environment variables:\n"
+                        "   - FIREBASE_TYPE\n"
+                        "   - FIREBASE_PROJECT_ID\n"
+                        "   - FIREBASE_PRIVATE_KEY_ID\n"
+                        "   - FIREBASE_PRIVATE_KEY\n"
+                        "   - FIREBASE_CLIENT_EMAIL\n"
+                        "   - FIREBASE_CLIENT_ID\n"
+                        "   - FIREBASE_AUTH_URI\n"
+                        "   - FIREBASE_TOKEN_URI\n"
+                        "   - FIREBASE_AUTH_PROVIDER_X509_CERT_URL\n"
+                        "   - FIREBASE_CLIENT_X509_CERT_URL"
+                    )
 
-            cred = credentials.Certificate(service_account_config)
-            cls._app = firebase_admin.initialize_app(cred)
-            print("✓ Firebase initialized using environment variables")
+                cred = credentials.Certificate(service_account_config)
+                cls._app = firebase_admin.initialize_app(cred)
+                cls._db = firestore.client()
+                print("✓ Firebase initialized using environment variables")
+            else:
+                cls._using_mock = True
+                cls._db = MockFirestore()
+                print("WARNING: Firebase credentials not provided. Using in-memory Firestore mock.")
+        except (FileNotFoundError, ValueError) as init_error:
+            # Fall back to mock Firestore if configured to do so implicitly
+            if use_mock or cls._is_truthy(os.getenv("FIREBASE_ALLOW_MOCK_FALLBACK", "true")):
+                cls._using_mock = True
+                cls._db = MockFirestore()
+                print(
+                    f"WARNING: {str(init_error)}\n"
+                    "WARNING: Falling back to in-memory Firestore mock. Set FIREBASE_USE_MOCK=false "
+                    "and provide valid credentials to use Firebase."
+                )
+            else:
+                raise
+
+        cls._initialized = True
 
     @classmethod
     def _build_service_account_from_env(cls) -> Optional[dict]:
@@ -119,19 +155,21 @@ class FirebaseConfig:
         }
 
     @classmethod
-    def get_db(cls) -> firestore.client.Client:
+    def get_db(cls) -> Any:
         """
         Get Firestore database client instance.
 
         Initializes Firebase if not already initialized.
 
         Returns:
-            firestore.client.Client: Firestore database client instance
+            Any: Firestore database client instance
         """
-        if cls._db is None:
-            if cls._app is None:
-                cls.initialize()
+        if not cls._initialized:
+            cls.initialize()
+
+        if cls._db is None and not cls._using_mock:
             cls._db = firestore.client()
+
         return cls._db
 
     @classmethod
@@ -144,8 +182,15 @@ class FirebaseConfig:
         Returns:
             firebase_admin.App: Firebase app instance
         """
-        if cls._app is None:
+        if not cls._initialized:
             cls.initialize()
+
+        if cls._using_mock:
+            raise RuntimeError("Firebase mock mode active; no Firebase app instance available.")
+
+        if cls._app is None:
+            raise RuntimeError("Firebase app is not initialized.")
+
         return cls._app
 
     @classmethod
@@ -153,11 +198,21 @@ class FirebaseConfig:
         """
         Close Firebase connection and cleanup resources.
         """
-        if cls._app is not None:
+        if not cls._initialized:
+            return
+
+        if cls._using_mock:
+            cls._db = None
+            cls._app = None
+            print("✓ Firebase mock connection closed")
+        elif cls._app is not None:
             firebase_admin.delete_app(cls._app)
             cls._app = None
             cls._db = None
             print("✓ Firebase connection closed")
+
+        cls._initialized = False
+        cls._using_mock = False
 
 
 # Convenience function to initialize Firebase
@@ -167,6 +222,6 @@ def init_firebase() -> None:
 
 
 # Convenience function to get Firestore client
-def get_firestore_client() -> firestore.client.Client:
+def get_firestore_client() -> Any:
     """Get Firestore database client."""
     return FirebaseConfig.get_db()
