@@ -2,6 +2,7 @@
 Authentication Service
 
 Provides authentication and session management functions including:
+- User sign-up
 - User sign-out
 - Session management
 - Token invalidation
@@ -10,6 +11,7 @@ Provides authentication and session management functions including:
 from datetime import datetime
 from typing import Optional, Any
 from app.utils.firebase_config import get_firestore_client
+from app.models.member import Member
 
 
 class AuthService:
@@ -21,6 +23,81 @@ class AuthService:
     def __init__(self):
         """Initialize the auth service with Firestore client."""
         self.db: Any = get_firestore_client()
+
+    async def sign_up_user(self, email: str, display_name: str) -> Member:
+        """
+        Sign up a new user by creating a member record.
+
+        This function:
+        1. Checks if email already exists
+        2. Creates a new member document with email and username
+        3. Initializes member with default values
+
+        Args:
+            email (str): User's email address
+            display_name (str): User's display name/username
+
+        Returns:
+            Member: The created member object
+
+        Raises:
+            ValueError: If email already exists
+            Exception: If there's an error during sign-up
+        """
+        try:
+            # Check if email already exists
+            existing_users = (
+                self.db.collection(self.USERS_COLLECTION)
+                .where("email", "==", email)
+                .limit(1)
+                .stream()
+            )
+
+            if any(existing_users):
+                raise ValueError(f"User with email '{email}' already exists")
+
+            # Create new member document
+            now = datetime.now()
+            member_data = {
+                "email": email,
+                "display_name": display_name,
+                "photo_url": None,
+                "phone": None,
+                "address": None,
+                "is_email_verified": False,
+                "created_at": now,
+                "last_sign_in_at": now,
+                "is_signed_in": True,
+                "preferences": {
+                    "email_notifications": True,
+                    "marketing_emails": False,
+                },
+            }
+
+            # Add member to Firestore
+            doc_ref = self.db.collection(self.USERS_COLLECTION).document()
+            doc_ref.set(member_data)
+
+            print(f"✓ User {email} signed up successfully with ID: {doc_ref.id}")
+
+            # Create and return Member object
+            return Member(
+                id=doc_ref.id,
+                email=email,
+                display_name=display_name,
+                photo_url=None,
+                phone=None,
+                address=None,
+                is_email_verified=False,
+                created_at=now,
+                last_sign_in_at=now,
+                preferences=member_data["preferences"],
+            )
+
+        except ValueError:
+            raise
+        except Exception as e:
+            raise Exception(f"Error signing up user: {str(e)}")
 
     async def sign_out_user(self, user_id: str) -> bool:
         """

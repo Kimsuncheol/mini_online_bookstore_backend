@@ -218,13 +218,23 @@ class MemberService:
             Member: The converted Member object
         """
         data = doc.to_dict()
+
+        # Handle preferences
+        preferences_data = data.get("preferences")
+        from app.models.member import UserPreferences
+        preferences = UserPreferences(**preferences_data) if preferences_data else None
+
         return Member(
             id=doc.id,
             email=data.get("email"),
-            name=data.get("name"),
+            display_name=data.get("display_name"),
+            photo_url=data.get("photo_url"),
             phone=data.get("phone"),
+            address=data.get("address"),
+            is_email_verified=data.get("is_email_verified", False),
             created_at=data.get("created_at"),
-            updated_at=data.get("updated_at"),
+            last_sign_in_at=data.get("last_sign_in_at"),
+            preferences=preferences,
         )
 
 
