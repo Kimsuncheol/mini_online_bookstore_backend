@@ -11,7 +11,7 @@ Provides authentication and session management functions including:
 from datetime import datetime
 from typing import Optional, Any
 from app.utils.firebase_config import get_firestore_client
-from app.models.member import Member
+from app.models.member import User
 
 
 class AuthService:
@@ -24,7 +24,7 @@ class AuthService:
         """Initialize the auth service with Firestore client."""
         self.db: Any = get_firestore_client()
 
-    async def sign_up_user(self, email: str, display_name: str) -> Member:
+    async def sign_up_user(self, email: str, display_name: str) -> User:
         """
         Sign up a new user by creating a member record.
 
@@ -38,7 +38,7 @@ class AuthService:
             display_name (str): User's display name/username
 
         Returns:
-            Member: The created member object
+            User: The created user object
 
         Raises:
             ValueError: If email already exists
@@ -60,17 +60,18 @@ class AuthService:
             now = datetime.now()
             member_data = {
                 "email": email,
-                "display_name": display_name,
-                "photo_url": None,
+                "displayName": display_name,
+                "photoURL": None,
+                "role": "user",
                 "phone": None,
                 "address": None,
-                "is_email_verified": False,
-                "created_at": now,
-                "last_sign_in_at": now,
-                "is_signed_in": True,
+                "isEmailVerified": False,
+                "createdAt": now,
+                "lastSignInAt": now,
+                "isSignedIn": True,
                 "preferences": {
-                    "email_notifications": True,
-                    "marketing_emails": False,
+                    "emailNotifications": True,
+                    "marketingEmails": False,
                 },
             }
 
@@ -78,14 +79,15 @@ class AuthService:
             doc_ref = self.db.collection(self.USERS_COLLECTION).document()
             doc_ref.set(member_data)
 
-            print(f"✓ User {email} signed up successfully with ID: {doc_ref.id}")
+            print(f"User {email} signed up successfully with ID: {doc_ref.id}")
 
-            # Create and return Member object
-            return Member(
+            # Create and return User object
+            return User(
                 id=doc_ref.id,
                 email=email,
                 display_name=display_name,
                 photo_url=None,
+                role="user",
                 phone=None,
                 address=None,
                 is_email_verified=False,
@@ -123,19 +125,19 @@ class AuthService:
 
             user_doc = user_ref.get()
             if not user_doc.exists:
-                print(f"� User {user_id} not found for sign-out")
+                print(f"User {user_id} not found for sign-out")
                 return False
 
             # Update user document with sign-out info
             user_ref.update(
                 {
-                    "last_sign_out_at": datetime.now(),
-                    "is_signed_in": False,
-                    "updated_at": datetime.now(),
+                    "lastSignOutAt": datetime.now(),
+                    "isSignedIn": False,
+                    "updatedAt": datetime.now(),
                 }
             )
 
-            print(f" User {user_id} signed out successfully")
+            print(f"User {user_id} signed out successfully")
 
             # Optional: Invalidate sessions
             await self._invalidate_sessions(user_id)
@@ -169,12 +171,12 @@ class AuthService:
                 deleted_count += 1
 
             if deleted_count > 0:
-                print(f" Invalidated {deleted_count} session(s) for user {user_id}")
+                print(f"Invalidated {deleted_count} session(s) for user {user_id}")
 
             return True
 
         except Exception as e:
-            print(f" Error invalidating sessions for user {user_id}: {str(e)}")
+            print(f"Error invalidating sessions for user {user_id}: {str(e)}")
             return False
 
     async def verify_user_session(self, user_id: str) -> bool:
@@ -196,12 +198,12 @@ class AuthService:
 
             user_data = user_doc.to_dict()
             # Check if user is signed in
-            is_signed_in = user_data.get("is_signed_in", False)
+            is_signed_in = user_data.get("isSignedIn", user_data.get("is_signed_in", False))
 
             return is_signed_in
 
         except Exception as e:
-            print(f" Error verifying session for user {user_id}: {str(e)}")
+            print(f"Error verifying session for user {user_id}: {str(e)}")
             return False
 
     async def get_user_session_info(self, user_id: str) -> Optional[dict]:
@@ -224,15 +226,15 @@ class AuthService:
             user_data = user_doc.to_dict()
 
             return {
-                "user_id": user_id,
-                "is_signed_in": user_data.get("is_signed_in", False),
-                "created_at": user_data.get("created_at"),
-                "last_sign_in_at": user_data.get("last_sign_in_at"),
-                "last_sign_out_at": user_data.get("last_sign_out_at"),
+                "userId": user_id,
+                "isSignedIn": user_data.get("isSignedIn", user_data.get("is_signed_in", False)),
+                "createdAt": user_data.get("createdAt", user_data.get("created_at")),
+                "lastSignInAt": user_data.get("lastSignInAt", user_data.get("last_sign_in_at")),
+                "lastSignOutAt": user_data.get("lastSignOutAt", user_data.get("last_sign_out_at")),
             }
 
         except Exception as e:
-            print(f" Error getting session info for user {user_id}: {str(e)}")
+            print(f"Error getting session info for user {user_id}: {str(e)}")
             return None
 
 

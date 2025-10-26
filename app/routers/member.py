@@ -11,7 +11,7 @@ Handles member/user profile operations including:
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from typing import Optional
-from app.models.member import Member, MemberUpdate
+from app.models.member import User, UserUpdate
 from app.services.member_service import get_member_service
 
 router = APIRouter(prefix="/api/members", tags=["members"])
@@ -41,7 +41,7 @@ async def get_member_profile(member_id: str = Path(..., description="The member 
                 detail=f"Member with ID '{member_id}' not found",
             )
 
-        return member.model_dump()
+        return member.model_dump(by_alias=True)
 
     except HTTPException:
         raise
@@ -76,7 +76,7 @@ async def get_member_by_email(email: str = Path(..., description="The member's e
                 detail=f"Member with email '{email}' not found",
             )
 
-        return member.model_dump()
+        return member.model_dump(by_alias=True)
 
     except HTTPException:
         raise
@@ -103,13 +103,13 @@ async def get_all_members(limit: Optional[int] = Query(None, ge=1, le=100)):
     """
     try:
         member_service = get_member_service()
-        members = member_service.fetch_all_users()
+        users = member_service.fetch_all_users()
 
         # Apply limit if specified
         if limit:
-            members = members[:limit]
+            users = users[:limit]
 
-        return [member.model_dump() for member in members]
+        return [user.model_dump(by_alias=True) for user in users]
 
     except Exception as e:
         raise HTTPException(
@@ -121,7 +121,7 @@ async def get_all_members(limit: Optional[int] = Query(None, ge=1, le=100)):
 @router.patch("/{member_id}", response_model=dict)
 async def update_member_profile(
     member_id: str = Path(..., description="The member ID"),
-    update_data: MemberUpdate = None,
+    update_data: UserUpdate = None,
 ):
     """
     Update a member's profile.
@@ -136,7 +136,7 @@ async def update_member_profile(
 
     Args:
         member_id (str): The unique identifier of the member
-        update_data (MemberUpdate): The fields to update
+        update_data (UserUpdate): The fields to update
 
     Returns:
         dict: Updated member profile data
@@ -162,7 +162,7 @@ async def update_member_profile(
                 detail=f"Member with ID '{member_id}' not found",
             )
 
-        return updated_member.model_dump()
+        return updated_member.model_dump(by_alias=True)
 
     except HTTPException:
         raise
@@ -261,7 +261,7 @@ async def get_member_profile_detailed(member_id: str = Path(..., description="Th
             )
 
         # Return detailed profile
-        profile_data = member.model_dump()
+        profile_data = member.model_dump(by_alias=True)
         profile_data["profile_complete"] = all(
             [
                 member.display_name,

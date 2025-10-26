@@ -321,8 +321,8 @@ When a user signs out due to timeout, the following fields are updated in the `m
 
 ```firestore
 members/{user_id}
-  - is_signed_in: false
-  - last_sign_out_at: <current_timestamp>
+  - isSignedIn: false
+  - lastSignOutAt: <current_timestamp>
   - updated_at: <current_timestamp>
 ```
 

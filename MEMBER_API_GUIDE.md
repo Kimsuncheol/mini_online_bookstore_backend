@@ -28,16 +28,16 @@ http://localhost:8000/api/members
 {
   "id": "user_12345",
   "email": "john.doe@example.com",
-  "display_name": "John Doe",
-  "photo_url": "https://example.com/photos/john.jpg",
+  "displayName": "John Doe",
+  "photoURL": "https://example.com/photos/john.jpg",
   "phone": "+1-555-123-4567",
   "address": "123 Main St, City, State 12345",
-  "is_email_verified": true,
-  "created_at": "2025-10-25T10:00:00.000000",
-  "last_sign_in_at": "2025-10-25T14:30:00.000000",
+  "isEmailVerified": true,
+  "createdAt": "2025-10-25T10:00:00.000000",
+  "lastSignInAt": "2025-10-25T14:30:00.000000",
   "preferences": {
-    "email_notifications": true,
-    "marketing_emails": false
+    "emailNotifications": true,
+    "marketingEmails": false
   }
 }
 ```
@@ -70,15 +70,15 @@ curl http://localhost:8000/api/members/user_12345
 {
   "id": "user_12345",
   "email": "john.doe@example.com",
-  "display_name": "John Doe",
+  "displayName": "John Doe",
   "phone": "+1-555-123-4567",
   "address": "123 Main St, City, State 12345",
-  "is_email_verified": true,
-  "created_at": "2025-10-25T10:00:00.000000",
-  "last_sign_in_at": "2025-10-25T14:30:00.000000",
+  "isEmailVerified": true,
+  "createdAt": "2025-10-25T10:00:00.000000",
+  "lastSignInAt": "2025-10-25T14:30:00.000000",
   "preferences": {
-    "email_notifications": true,
-    "marketing_emails": false
+    "emailNotifications": true,
+    "marketingEmails": false
   }
 }
 ```
@@ -112,18 +112,18 @@ curl http://localhost:8000/api/members/email/john.doe@example.com
   {
     "id": "user_12345",
     "email": "john.doe@example.com",
-    "display_name": "John Doe",
+    "displayName": "John Doe",
     "phone": "+1-555-123-4567",
-    "is_email_verified": true,
-    "created_at": "2025-10-25T10:00:00.000000"
+    "isEmailVerified": true,
+    "createdAt": "2025-10-25T10:00:00.000000"
   },
   {
     "id": "user_12346",
     "email": "jane.smith@example.com",
-    "display_name": "Jane Smith",
+    "displayName": "Jane Smith",
     "phone": "+1-555-987-6543",
-    "is_email_verified": true,
-    "created_at": "2025-10-25T11:00:00.000000"
+    "isEmailVerified": true,
+    "createdAt": "2025-10-25T11:00:00.000000"
   }
 ]
 ```
@@ -151,42 +151,42 @@ curl "http://localhost:8000/api/members?limit=10"
 **Request Body (all fields optional):**
 ```json
 {
-  "display_name": "John Smith",
+  "displayName": "John Smith",
   "phone": "+1-555-999-8888",
   "address": "456 Oak Avenue, New City, State 54321",
-  "photo_url": "https://example.com/photos/john-new.jpg",
+  "photoURL": "https://example.com/photos/john-new.jpg",
   "preferences": {
-    "email_notifications": false,
-    "marketing_emails": true
+    "emailNotifications": false,
+    "marketingEmails": true
   }
 }
 ```
 
 **Updateable Fields:**
 - `email` - Email address
-- `display_name` - Display name/username
+- `displayName` - Display name/username
 - `phone` - Phone number
 - `address` - Physical address
-- `photo_url` - Profile photo URL
+- `photoURL` - Profile photo URL
 - `preferences` - Notification preferences
-  - `email_notifications` - Enable/disable email notifications
-  - `marketing_emails` - Enable/disable marketing emails
+  - `emailNotifications` - Enable/disable email notifications
+  - `marketingEmails` - Enable/disable marketing emails
 
 **Response (200 OK):**
 ```json
 {
   "id": "user_12345",
   "email": "john.doe@example.com",
-  "display_name": "John Smith",
+  "displayName": "John Smith",
   "phone": "+1-555-999-8888",
   "address": "456 Oak Avenue, New City, State 54321",
-  "photo_url": "https://example.com/photos/john-new.jpg",
-  "is_email_verified": true,
-  "created_at": "2025-10-25T10:00:00.000000",
-  "last_sign_in_at": "2025-10-25T14:30:00.000000",
+  "photoURL": "https://example.com/photos/john-new.jpg",
+  "isEmailVerified": true,
+  "createdAt": "2025-10-25T10:00:00.000000",
+  "lastSignInAt": "2025-10-25T14:30:00.000000",
   "preferences": {
-    "email_notifications": false,
-    "marketing_emails": true
+    "emailNotifications": false,
+    "marketingEmails": true
   }
 }
 ```
@@ -212,11 +212,11 @@ curl "http://localhost:8000/api/members?limit=10"
 curl -X PATCH http://localhost:8000/api/members/user_12345 \
   -H "Content-Type: application/json" \
   -d '{
-    "display_name": "John Smith",
+    "displayName": "John Smith",
     "phone": "+1-555-999-8888",
     "preferences": {
-      "email_notifications": false,
-      "marketing_emails": true
+      "emailNotifications": false,
+      "marketingEmails": true
     }
   }'
 ```
@@ -281,23 +281,23 @@ curl -X DELETE http://localhost:8000/api/members/user_12345/account
 {
   "id": "user_12345",
   "email": "john.doe@example.com",
-  "display_name": "John Doe",
-  "photo_url": "https://example.com/photos/john.jpg",
+  "displayName": "John Doe",
+  "photoURL": "https://example.com/photos/john.jpg",
   "phone": "+1-555-123-4567",
   "address": "123 Main St, City, State 12345",
-  "is_email_verified": true,
-  "created_at": "2025-10-25T10:00:00.000000",
-  "last_sign_in_at": "2025-10-25T14:30:00.000000",
+  "isEmailVerified": true,
+  "createdAt": "2025-10-25T10:00:00.000000",
+  "lastSignInAt": "2025-10-25T14:30:00.000000",
   "preferences": {
-    "email_notifications": true,
-    "marketing_emails": false
+    "emailNotifications": true,
+    "marketingEmails": false
   },
   "profile_complete": true
 }
 ```
 
 **Additional Fields:**
-- `profile_complete` (boolean): Indicates if all profile fields (display_name, phone, address) are filled
+- `profile_complete` (boolean): Indicates if all profile fields (displayName, phone, address) are filled
 
 **cURL Example:**
 ```bash
@@ -313,16 +313,16 @@ Members are stored in the `members` collection in Firestore:
 ```firestore
 members/{user_id}
   ├── email: "john.doe@example.com"
-  ├── display_name: "John Doe"
-  ├── photo_url: "https://example.com/photos/john.jpg"
+  ├── displayName: "John Doe"
+  ├── photoURL: "https://example.com/photos/john.jpg"
   ├── phone: "+1-555-123-4567"
   ├── address: "123 Main St, City, State 12345"
-  ├── is_email_verified: true
-  ├── created_at: <timestamp>
-  ├── last_sign_in_at: <timestamp>
+  ├── isEmailVerified: true
+  ├── createdAt: <timestamp>
+  ├── lastSignInAt: <timestamp>
   └── preferences: {
-        email_notifications: true,
-        marketing_emails: false
+        emailNotifications: true,
+        marketingEmails: false
       }
 ```
 
@@ -356,8 +356,8 @@ curl -X PATCH http://localhost:8000/api/members/user_12345 \
   -H "Content-Type: application/json" \
   -d '{
     "preferences": {
-      "email_notifications": false,
-      "marketing_emails": true
+      "emailNotifications": false,
+      "marketingEmails": true
     }
   }'
 ```
@@ -390,10 +390,10 @@ curl http://localhost:8000/api/members/user_12345
 | Field | Required | Type | Validation |
 |-------|----------|------|------------|
 | email | Yes | string | Valid email format |
-| display_name | No | string | Max 255 characters |
+| displayName | No | string | Max 255 characters |
 | phone | No | string | Max 20 characters |
 | address | No | string | No limit |
-| photo_url | No | string | Valid URL format |
+| photoURL | No | string | Valid URL format |
 
 ---
 
@@ -461,11 +461,11 @@ async function deleteAccount(memberId: string) {
 
 // Usage
 updateMemberProfile('user_12345', {
-  display_name: 'John Smith',
+  displayName: 'John Smith',
   phone: '+1-555-999-8888',
   preferences: {
-    email_notifications: false,
-    marketing_emails: true,
+    emailNotifications: false,
+    marketingEmails: true,
   },
 })
   .then(updated => console.log('Profile updated:', updated))

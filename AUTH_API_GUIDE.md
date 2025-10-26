@@ -24,7 +24,7 @@ http://localhost:8000/api/auth
 ```json
 {
   "email": "user@example.com",
-  "display_name": "John Doe"
+  "displayName": "John Doe"
 }
 ```
 
@@ -33,7 +33,7 @@ http://localhost:8000/api/auth
 {
   "id": "user_12345",
   "email": "user@example.com",
-  "display_name": "John Doe",
+  "displayName": "John Doe",
   "message": "User signed up successfully"
 }
 ```
@@ -60,7 +60,7 @@ curl -X POST http://localhost:8000/api/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john.doe@example.com",
-    "display_name": "John Doe"
+    "displayName": "John Doe"
   }'
 ```
 
@@ -119,10 +119,10 @@ curl -X POST "http://localhost:8000/api/auth/signout?user_id=user_12345"
 ```json
 {
   "user_id": "user_12345",
-  "is_signed_in": true,
-  "created_at": "2025-10-25T10:00:00.000000",
-  "last_sign_in_at": "2025-10-25T14:30:00.000000",
-  "last_sign_out_at": "2025-10-25T12:00:00.000000"
+  "isSignedIn": true,
+  "createdAt": "2025-10-25T10:00:00.000000",
+  "lastSignInAt": "2025-10-25T14:30:00.000000",
+  "lastSignOutAt": "2025-10-25T12:00:00.000000"
 }
 ```
 
@@ -183,21 +183,21 @@ curl http://localhost:8000/api/auth/session/user_12345/verify
 1. **Email Validation:** Checks if the email is already registered
 2. **Member Creation:** Creates a new document in the `members` collection with:
    - `email`: User's email address
-   - `display_name`: User's display name/username
-   - `photo_url`: `null` (can be updated later)
+   - `displayName`: User's display name/username
+   - `photoURL`: `null` (can be updated later)
    - `phone`: `null` (can be updated later)
    - `address`: `null` (can be updated later)
-   - `is_email_verified`: `false`
-   - `created_at`: Current timestamp
-   - `last_sign_in_at`: Current timestamp
-   - `is_signed_in`: `true`
+   - `isEmailVerified`: `false`
+   - `createdAt`: Current timestamp
+   - `lastSignInAt`: Current timestamp
+   - `isSignedIn`: `true`
    - `preferences`: Default preferences object
 
 3. **Default Preferences:**
    ```json
    {
-     "email_notifications": true,
-     "marketing_emails": false
+     "emailNotifications": true,
+     "marketingEmails": false
    }
    ```
 
@@ -214,17 +214,17 @@ When a user signs up, a new document is created in the `members` collection:
 ```firestore
 members/{user_id}
   - email: "john.doe@example.com"
-  - display_name: "John Doe"
-  - photo_url: null
+  - displayName: "John Doe"
+  - photoURL: null
   - phone: null
   - address: null
-  - is_email_verified: false
-  - created_at: <timestamp>
-  - last_sign_in_at: <timestamp>
-  - is_signed_in: true
+  - isEmailVerified: false
+  - createdAt: <timestamp>
+  - lastSignInAt: <timestamp>
+  - isSignedIn: true
   - preferences: {
-      email_notifications: true,
-      marketing_emails: false
+      emailNotifications: true,
+      marketingEmails: false
     }
 ```
 
@@ -240,14 +240,14 @@ curl -X POST http://localhost:8000/api/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "alice@example.com",
-    "display_name": "Alice Smith"
+    "displayName": "Alice Smith"
   }'
 
 # Response:
 # {
 #   "id": "user_abc123",
 #   "email": "alice@example.com",
-#   "display_name": "Alice Smith",
+#   "displayName": "Alice Smith",
 #   "message": "User signed up successfully"
 # }
 ```
@@ -275,10 +275,10 @@ curl http://localhost:8000/api/auth/session/user_abc123
 # Response:
 # {
 #   "user_id": "user_abc123",
-#   "is_signed_in": true,
-#   "created_at": "2025-10-25T10:00:00.000000",
-#   "last_sign_in_at": "2025-10-25T10:00:00.000000",
-#   "last_sign_out_at": null
+#   "isSignedIn": true,
+#   "createdAt": "2025-10-25T10:00:00.000000",
+#   "lastSignInAt": "2025-10-25T10:00:00.000000",
+#   "lastSignOutAt": null
 # }
 ```
 
@@ -316,7 +316,7 @@ curl http://localhost:8000/api/auth/session/user_abc123/verify
 | Field | Required | Type | Validation |
 |-------|----------|------|------------|
 | email | Yes | string | Valid email format |
-| display_name | Yes | string | 1-255 characters |
+| displayName | Yes | string | 1-255 characters |
 
 ---
 
@@ -362,7 +362,7 @@ curl http://localhost:8000/api/auth/session/user_abc123/verify
   "detail": [
     {
       "type": "missing",
-      "loc": ["body", "display_name"],
+      "loc": ["body", "displayName"],
       "msg": "Field required"
     }
   ]
@@ -397,7 +397,7 @@ async function signUp(email: string, displayName: string) {
       },
       body: JSON.stringify({
         email: email,
-        display_name: displayName,
+        displayName: displayName,
       }),
     });
 

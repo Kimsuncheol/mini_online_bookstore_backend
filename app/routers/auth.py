@@ -7,9 +7,12 @@ Handles authentication operations including:
 - Session management
 """
 
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from typing import Literal, Optional
+from pydantic import AliasChoices, BaseModel, EmailStr, Field
 from app.services.auth_service import get_auth_service
+from app.models.member import UserPreferences
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -19,17 +22,70 @@ class SignUpRequest(BaseModel):
 
     email: EmailStr = Field(..., description="User's email address")
     display_name: str = Field(
-        ..., min_length=1, max_length=255, description="User's display name/username"
+        ...,
+        min_length=1,
+        max_length=255,
+        description="User's display name/username",
+        alias="displayName",
+        validation_alias=AliasChoices("displayName", "display_name"),
+        serialization_alias="displayName",
     )
 
 
 class SignUpResponse(BaseModel):
-    """Response model for successful sign-up."""
+    """Response model for successful sign-up aligned with the new User interface."""
 
     id: str = Field(..., description="User ID")
     email: str = Field(..., description="User email")
-    display_name: str = Field(..., description="User display name")
+    display_name: Optional[str] = Field(
+        None,
+        description="User display name",
+        alias="displayName",
+        validation_alias=AliasChoices("displayName", "display_name"),
+        serialization_alias="displayName",
+    )
+    photo_url: Optional[str] = Field(
+        None,
+        description="User profile photo URL",
+        alias="photoURL",
+        validation_alias=AliasChoices("photoURL", "photo_url"),
+        serialization_alias="photoURL",
+    )
+    role: Literal["admin", "author", "user"] = Field(
+        default="user", description="User role determining permissions"
+    )
+    is_email_verified: bool = Field(
+        default=False,
+        description="Email verification status",
+        alias="isEmailVerified",
+        validation_alias=AliasChoices("isEmailVerified", "is_email_verified"),
+        serialization_alias="isEmailVerified",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Account creation timestamp",
+        alias="createdAt",
+        validation_alias=AliasChoices("createdAt", "created_at"),
+        serialization_alias="createdAt",
+    )
+    last_sign_in_at: Optional[datetime] = Field(
+        None,
+        description="Last sign-in timestamp",
+        alias="lastSignInAt",
+        validation_alias=AliasChoices("lastSignInAt", "last_sign_in_at"),
+        serialization_alias="lastSignInAt",
+    )
+    preferences: Optional[UserPreferences] = Field(
+        None, description="User notification and marketing preferences"
+    )
+    phone: Optional[str] = Field(None, description="User phone number")
+    address: Optional[str] = Field(None, description="User address")
     message: str = Field(..., description="Success message")
+
+    class Config:
+        """Allow population by field name."""
+
+        populate_by_name = True
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED, response_model=SignUpResponse)
@@ -60,7 +116,15 @@ async def sign_up(request: SignUpRequest):
         return SignUpResponse(
             id=member.id,
             email=member.email,
-            display_name=member.display_name or "",
+            display_name=member.display_name,
+            photo_url=member.photo_url,
+            role=member.role,
+            is_email_verified=member.is_email_verified,
+            created_at=member.created_at,
+            last_sign_in_at=member.last_sign_in_at,
+            preferences=member.preferences,
+            phone=member.phone,
+            address=member.address,
             message="User signed up successfully",
         )
 
