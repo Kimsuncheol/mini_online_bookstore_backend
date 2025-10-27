@@ -10,6 +10,7 @@ Handles book-related operations including:
 """
 
 from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi.responses import StreamingResponse
 from typing import Optional, List
 from app.models.book import (
     Book,
@@ -24,6 +25,13 @@ from app.models.book import (
     BookReviewUpdate,
 )
 from app.services.book_service import get_book_service
+from app.services.book_viewer_service import (
+    get_book_viewer_service,
+    BookViewerError,
+    BookNotFoundError,
+    PdfNotFoundError,
+)
+from app.models.book_viewer import BookViewerPayload
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 
@@ -79,6 +87,53 @@ async def get_book(book_id: str = Path(..., description="The book ID")):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching book: {str(e)}")
+
+
+@router.get("/{book_id}/viewer", response_model=BookViewerPayload)
+async def get_book_viewer(book_id: str = Path(..., description="The book ID")):
+    """
+    Fetch metadata required for the book PDF viewer.
+
+    Returns book details, PDF metadata, and the streaming URL for the PDF asset.
+    """
+    viewer_service = get_book_viewer_service()
+
+    try:
+        payload = viewer_service.get_viewer_payload(book_id)
+        return payload
+    except BookNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PdfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except BookViewerError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/{book_id}/viewer/stream")
+async def stream_book_pdf(book_id: str = Path(..., description="The book ID")):
+    """
+    Stream the PDF asset associated with a book for the viewer.
+    """
+    viewer_service = get_book_viewer_service()
+
+    try:
+        payload = viewer_service.get_viewer_payload(book_id)
+        file_handle = viewer_service.open_pdf(book_id)
+    except BookNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PdfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except BookViewerError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    metadata = payload.pdf
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{metadata.filename}"',
+        "Content-Length": str(metadata.file_size),
+    }
+
+    return StreamingResponse(file_handle, media_type=metadata.mime_type, headers=headers)
 
 
 @router.get("")

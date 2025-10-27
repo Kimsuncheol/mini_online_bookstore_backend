@@ -2,7 +2,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.utils.firebase_config import init_firebase
-from app.routers import websocket, cart, books, auth, member, advertisements, payments
+from app.routers import websocket, cart, books, auth, member, advertisements, payments, like, ai_search
 from fastapi.middleware.cors import CORSMiddleware
 
 @asynccontextmanager
@@ -46,6 +46,8 @@ app.include_router(auth.router)
 app.include_router(member.router)
 app.include_router(advertisements.router)
 app.include_router(payments.router)
+app.include_router(like.router)
+app.include_router(ai_search.router)
 
 
 @app.get("/")
