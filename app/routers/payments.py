@@ -8,6 +8,7 @@ Handles payment-related operations including:
 - Payment statistics
 """
 
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Path, Query
 from typing import Optional
 from app.models.payment import (
@@ -21,6 +22,20 @@ from app.models.payment import (
 from app.services.payment_service import get_payment_service
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
+
+
+def _parse_datetime(value: Optional[str], field_name: str) -> Optional[datetime]:
+    """Parse ISO formatted datetime strings from query params."""
+    if value is None:
+        return None
+
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name} format. Use ISO 8601 (e.g. 2024-01-31T15:30:00).",
+        ) from exc
 
 
 # ==================== PAYMENT CRUD ENDPOINTS ====================
@@ -206,6 +221,80 @@ async def get_email_payments(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error fetching payments for email: {str(e)}"
+        )
+
+
+@router.get("/history/user")
+async def search_user_payment_history(
+    email: str = Query(..., description="User email to filter"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start timestamp filter"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end timestamp filter"),
+    min_amount: Optional[float] = Query(None, ge=0, description="Minimum total amount"),
+    max_amount: Optional[float] = Query(None, ge=0, description="Maximum total amount"),
+    book_name: Optional[str] = Query(None, description="Match book title containing this text"),
+    limit: Optional[int] = Query(None, ge=1, le=200, description="Maximum records to return"),
+):
+    """
+    Search payment history for a specific user using optional filters.
+    """
+    try:
+        if min_amount is not None and max_amount is not None and min_amount > max_amount:
+            raise HTTPException(status_code=400, detail="min_amount cannot be greater than max_amount")
+
+        payment_service = get_payment_service()
+        results = payment_service.search_payments(
+            payer_email=email,
+            start_date=_parse_datetime(start_date, "start_date"),
+            end_date=_parse_datetime(end_date, "end_date"),
+            min_amount=min_amount,
+            max_amount=max_amount,
+            book_name=book_name,
+            limit=limit,
+        )
+
+        return [payment_service.payment_to_summary(p).model_dump() for p in results]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error searching payment history for user: {str(e)}"
+        )
+
+
+@router.get("/history/admin")
+async def search_payment_history_admin(
+    payer_email: Optional[str] = Query(None, description="Filter by payer email"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start timestamp filter"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end timestamp filter"),
+    min_amount: Optional[float] = Query(None, ge=0, description="Minimum total amount"),
+    max_amount: Optional[float] = Query(None, ge=0, description="Maximum total amount"),
+    book_name: Optional[str] = Query(None, description="Match book title containing this text"),
+    limit: Optional[int] = Query(None, ge=1, le=500, description="Maximum records to return"),
+):
+    """
+    Admin search across payment history with optional filters.
+    """
+    try:
+        if min_amount is not None and max_amount is not None and min_amount > max_amount:
+            raise HTTPException(status_code=400, detail="min_amount cannot be greater than max_amount")
+
+        payment_service = get_payment_service()
+        results = payment_service.search_payments(
+            payer_email=payer_email,
+            start_date=_parse_datetime(start_date, "start_date"),
+            end_date=_parse_datetime(end_date, "end_date"),
+            min_amount=min_amount,
+            max_amount=max_amount,
+            book_name=book_name,
+            limit=limit,
+        )
+
+        return [payment.model_dump() for payment in results]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error searching payment history: {str(e)}"
         )
 
 

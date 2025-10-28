@@ -1,9 +1,10 @@
 # main.py
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.utils.firebase_config import init_firebase
 from app.routers import websocket, cart, books, auth, member, advertisements, payments, like, ai_search
-from fastapi.middleware.cors import CORSMiddleware
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):

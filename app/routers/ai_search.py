@@ -186,14 +186,16 @@ async def get_answers_for_question(
 # ==================== CONVERSATION ENDPOINTS ====================
 
 
-@router.get("/conversations/{conversation_id}", response_model=AISearchConversation)
+@router.get("/conversations/{user_email}/{conversation_id}", response_model=AISearchConversation)
 async def get_conversation(
+    user_email: str = Path(..., description="The user's email"),
     conversation_id: str = Path(..., description="The conversation ID")
 ):
     """
     Fetch a conversation by its ID.
 
     Args:
+        user_email (str): The user's email address
         conversation_id (str): The unique identifier of the conversation
 
     Returns:
@@ -204,7 +206,7 @@ async def get_conversation(
     """
     try:
         ai_search_service = get_ai_search_service()
-        conversation = ai_search_service.get_conversation_by_id(conversation_id)
+        conversation = ai_search_service.get_conversation_by_id(user_email, conversation_id)
 
         if conversation is None:
             raise HTTPException(
@@ -250,6 +252,84 @@ async def get_user_conversations(
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching user conversations: {str(e)}",
+        )
+
+
+@router.delete("/conversations/{user_email}/{conversation_id}")
+async def delete_conversation(
+    user_email: str = Path(..., description="The user's email"),
+    conversation_id: str = Path(..., description="The conversation ID to delete"),
+):
+    """
+    Delete a specific conversation from user's chat history.
+
+    Args:
+        user_email (str): The user's email address
+        conversation_id (str): The conversation ID to delete
+
+    Returns:
+        dict: Success message with confirmation
+
+    Raises:
+        HTTPException: 404 if conversation not found, 500 if error occurs
+    """
+    try:
+        ai_search_service = get_ai_search_service()
+        success = ai_search_service.delete_conversation(user_email, conversation_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Conversation '{conversation_id}' not found for user '{user_email}'",
+            )
+
+        return {
+            "status": "success",
+            "message": f"Conversation '{conversation_id}' deleted successfully",
+            "user_email": user_email,
+            "conversation_id": conversation_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting conversation: {str(e)}",
+        )
+
+
+@router.delete("/conversations/user/{user_email}/all")
+async def delete_all_conversations(
+    user_email: str = Path(..., description="The user's email"),
+):
+    """
+    Delete all conversations for a user (clear entire chat history).
+
+    Args:
+        user_email (str): The user's email address
+
+    Returns:
+        dict: Success message with count of deleted conversations
+
+    Raises:
+        HTTPException: 500 if error occurs
+    """
+    try:
+        ai_search_service = get_ai_search_service()
+        deleted_count = ai_search_service.delete_all_conversations(user_email)
+
+        return {
+            "status": "success",
+            "message": f"All chat history cleared for user '{user_email}'",
+            "user_email": user_email,
+            "deleted_count": deleted_count,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error clearing chat history: {str(e)}",
         )
 
 

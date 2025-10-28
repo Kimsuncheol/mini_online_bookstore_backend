@@ -24,7 +24,13 @@ from app.models.book import (
     BookReviewCreate,
     BookReviewUpdate,
 )
+from app.models.book_summary import (
+    BookSummary,
+    SummaryGenerationRequest,
+    SummaryGenerationResponse,
+)
 from app.services.book_service import get_book_service
+from app.services.book_summary_service import get_book_summary_service
 from app.services.book_viewer_service import (
     get_book_viewer_service,
     BookViewerError,
@@ -40,12 +46,17 @@ router = APIRouter(prefix="/api/books", tags=["books"])
 
 
 @router.post("", status_code=201)
-async def create_book(book_data: BookCreate):
+async def create_book(
+    book_data: BookCreate,
+    generate_summary: bool = Query(True, description="Auto-generate AI summary")
+):
     """
     Create a new book in the bookstore.
+    Automatically generates AI-powered summary by default.
 
     Args:
         book_data (BookCreate): The book data to create
+        generate_summary (bool): Whether to generate AI summary (default: True)
 
     Returns:
         Book: The created book with ID
@@ -55,7 +66,7 @@ async def create_book(book_data: BookCreate):
     """
     try:
         book_service = get_book_service()
-        book = book_service.create_book(book_data)
+        book = await book_service.create_book(book_data, generate_summary=generate_summary)
         return book.model_dump()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating book: {str(e)}")
@@ -162,13 +173,19 @@ async def get_all_books(limit: Optional[int] = Query(None, ge=1, le=100)):
 async def update_book(
     book_id: str = Path(..., description="The book ID"),
     update_data: BookUpdate = None,
+    regenerate_summary: Optional[bool] = Query(
+        None,
+        description="Regenerate AI summary. If null, auto-detects based on updated fields"
+    ),
 ):
     """
     Update an existing book.
+    Automatically regenerates AI summary if key fields (title, author, description, genre) are updated.
 
     Args:
         book_id (str): The ID of the book to update
         update_data (BookUpdate): The data to update
+        regenerate_summary (Optional[bool]): Force regenerate summary. If None, auto-detects.
 
     Returns:
         Book: The updated book
@@ -181,7 +198,11 @@ async def update_book(
             raise HTTPException(status_code=400, detail="Update data is required")
 
         book_service = get_book_service()
-        updated_book = book_service.update_book(book_id, update_data)
+        updated_book = await book_service.update_book(
+            book_id,
+            update_data,
+            regenerate_summary=regenerate_summary
+        )
 
         if updated_book is None:
             raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found")
@@ -355,7 +376,7 @@ async def update_book_stock(
     """
     try:
         book_service = get_book_service()
-        updated_book = book_service.update_stock(book_id, quantity_change)
+        updated_book = await book_service.update_stock(book_id, quantity_change)
 
         if updated_book is None:
             raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found")
@@ -471,7 +492,7 @@ async def create_review(review_data: BookReviewCreate):
     """
     try:
         book_service = get_book_service()
-        review = book_service.create_review(review_data)
+        review = await book_service.create_review(review_data)
         return review.model_dump()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating review: {str(e)}")
@@ -498,4 +519,141 @@ async def get_book_reviews(book_id: str = Path(..., description="The book ID")):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error fetching reviews for book: {str(e)}"
+        )
+
+
+# ==================== BOOK SUMMARY ENDPOINTS ====================
+
+
+@router.get("/{book_id}/summary", response_model=BookSummary)
+async def get_book_summary(book_id: str = Path(..., description="The book ID")):
+    """
+    Fetch AI-generated summary for a book.
+
+    Args:
+        book_id (str): The book ID
+
+    Returns:
+        BookSummary: AI-generated summary with themes, tags, and recommendations
+
+    Raises:
+        HTTPException: 404 if summary not found, 500 if error occurs
+    """
+    try:
+        summary_service = get_book_summary_service()
+        summary = summary_service.get_summary_by_book_id(book_id)
+
+        if summary is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Summary for book '{book_id}' not found. Try generating one first."
+            )
+
+        return summary
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching book summary: {str(e)}"
+        )
+
+
+@router.post("/{book_id}/summary/generate", response_model=SummaryGenerationResponse)
+async def generate_book_summary(
+    book_id: str = Path(..., description="The book ID"),
+    force_regenerate: bool = Query(
+        False,
+        description="Force regeneration even if summary exists"
+    ),
+):
+    """
+    Generate AI-powered summary for a book.
+
+    Uses ChatGPT-4 to analyze the book and generate:
+    - Short and detailed summaries
+    - Key themes
+    - Target audience
+    - Mood tags
+    - Content warnings
+    - Similar books tags
+    - Compelling reason to read
+
+    Args:
+        book_id (str): The book ID
+        force_regenerate (bool): Force regeneration (default: False)
+
+    Returns:
+        SummaryGenerationResponse: Generated summary with metadata
+
+    Raises:
+        HTTPException: 404 if book not found, 500 if error occurs
+    """
+    try:
+        # Fetch the book
+        book_service = get_book_service()
+        book = book_service.get_book_by_id(book_id)
+
+        if book is None:
+            return SummaryGenerationResponse(
+                success=False,
+                error=f"Book with ID '{book_id}' not found"
+            )
+
+        # Generate summary
+        summary_service = get_book_summary_service()
+        summary = await summary_service.generate_summary_for_book(
+            book,
+            force_regenerate=force_regenerate
+        )
+
+        return SummaryGenerationResponse(
+            success=True,
+            summary=summary,
+            message=f"Summary generated successfully for '{book.title}'"
+        )
+
+    except Exception as e:
+        return SummaryGenerationResponse(
+            success=False,
+            error=f"Error generating summary: {str(e)}"
+        )
+
+
+@router.delete("/{book_id}/summary")
+async def delete_book_summary(book_id: str = Path(..., description="The book ID")):
+    """
+    Delete AI-generated summary for a book.
+
+    Args:
+        book_id (str): The book ID
+
+    Returns:
+        dict: Confirmation message
+
+    Raises:
+        HTTPException: 404 if summary not found, 500 if error occurs
+    """
+    try:
+        summary_service = get_book_summary_service()
+        success = summary_service.delete_summary_by_book_id(book_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Summary for book '{book_id}' not found"
+            )
+
+        return {
+            "status": "success",
+            "message": f"Summary for book '{book_id}' deleted successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting summary: {str(e)}"
         )

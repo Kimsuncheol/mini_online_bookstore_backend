@@ -218,6 +218,82 @@ class PaymentService:
         except Exception as e:
             raise Exception(f"Error fetching payments for email {payer_email}: {str(e)}")
 
+    def search_payments(
+        self,
+        *,
+        payer_email: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        min_amount: Optional[float] = None,
+        max_amount: Optional[float] = None,
+        book_name: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[PaymentHistory]:
+        """
+        Search payment history using optional filters.
+
+        Args:
+            payer_email: Filter by payer email
+            start_date: Inclusive start timestamp
+            end_date: Inclusive end timestamp
+            min_amount: Minimum total order amount
+            max_amount: Maximum total order amount
+            book_name: Case-insensitive match against purchased book titles
+            limit: Maximum number of records to return
+
+        Returns:
+            List[PaymentHistory]: Filtered payment records ordered by newest first
+        """
+        try:
+            collection = self.db.collection(self.PAYMENT_HISTORY_COLLECTION)
+            query = collection
+
+            if payer_email:
+                query = query.where("payer_email", "==", payer_email)
+
+            if start_date:
+                query = query.where("created_at", ">=", start_date)
+
+            if end_date:
+                query = query.where("created_at", "<=", end_date)
+
+            query = query.order_by("created_at", direction="DESCENDING")
+
+            book_name_filter = (book_name or "").strip().lower()
+            needs_post_filter = (
+                bool(book_name_filter) or min_amount is not None or max_amount is not None
+            )
+
+            if limit and not needs_post_filter:
+                query = query.limit(limit)
+
+            docs = query.stream()
+            payments = [self._document_to_payment(doc) for doc in docs]
+
+            filtered: List[PaymentHistory] = []
+            for payment in payments:
+                if min_amount is not None and payment.total_amount < min_amount:
+                    continue
+                if max_amount is not None and payment.total_amount > max_amount:
+                    continue
+
+                if book_name_filter:
+                    matches_book = any(
+                        book_name_filter in (item.book_title or "").lower()
+                        for item in payment.items
+                    )
+                    if not matches_book:
+                        continue
+
+                filtered.append(payment)
+
+            if limit:
+                return filtered[:limit]
+
+            return filtered
+        except Exception as e:
+            raise Exception(f"Error searching payment history: {str(e)}")
+
     def update_payment(
         self, payment_id: str, update_data: PaymentHistoryUpdate
     ) -> Optional[PaymentHistory]:

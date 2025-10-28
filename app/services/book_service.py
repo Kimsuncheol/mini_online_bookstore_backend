@@ -3,6 +3,7 @@ Book Service
 
 Provides business logic and database operations for managing books.
 Includes CRUD operations, filtering, searching, and sorting functionality.
+Now includes AI-powered summary generation using LangChain.
 """
 
 from typing import List, Optional, Any, Dict
@@ -21,6 +22,7 @@ from app.models.book import (
     BookReviewUpdate,
 )
 from app.utils.firebase_config import get_firestore_client
+import asyncio
 
 
 class BookService:
@@ -36,12 +38,14 @@ class BookService:
 
     # ==================== BOOK CRUD OPERATIONS ====================
 
-    def create_book(self, book_data: BookCreate) -> Book:
+    async def create_book(self, book_data: BookCreate, generate_summary: bool = True) -> Book:
         """
         Create a new book in the bookstore.
+        Automatically generates AI-powered summary if enabled.
 
         Args:
             book_data (BookCreate): The book data to create
+            generate_summary (bool): Whether to generate AI summary (default: True)
 
         Returns:
             Book: The created book object with ID
@@ -64,12 +68,25 @@ class BookService:
             doc_ref = self.db.collection(self.BOOKS_COLLECTION).document()
             doc_ref.set(data)
 
-            return Book(
+            created_book = Book(
                 id=doc_ref.id,
                 created_at=now,
                 updated_at=now,
                 **book_data.model_dump(),
             )
+
+            # Generate AI summary asynchronously if enabled
+            if generate_summary:
+                try:
+                    from app.services.book_summary_service import get_book_summary_service
+                    summary_service = get_book_summary_service()
+                    await summary_service.generate_summary_for_book(created_book)
+                    print(f"✓ AI summary generated for book: {created_book.title}")
+                except Exception as e:
+                    # Don't fail book creation if summary generation fails
+                    print(f"Warning: Failed to generate summary for book {created_book.id}: {str(e)}")
+
+            return created_book
         except Exception as e:
             raise Exception(f"Error creating book: {str(e)}")
 
@@ -121,13 +138,21 @@ class BookService:
         except Exception as e:
             raise Exception(f"Error fetching all books: {str(e)}")
 
-    def update_book(self, book_id: str, update_data: BookUpdate) -> Optional[Book]:
+    async def update_book(
+        self,
+        book_id: str,
+        update_data: BookUpdate,
+        regenerate_summary: bool = None
+    ) -> Optional[Book]:
         """
         Update an existing book.
+        Automatically regenerates AI summary if key fields are updated.
 
         Args:
             book_id (str): The ID of the book to update
             update_data (BookUpdate): The data to update
+            regenerate_summary (bool): Force regenerate summary.
+                                       If None, auto-detects based on updated fields.
 
         Returns:
             Optional[Book]: The updated book object, or None if book doesn't exist
@@ -147,16 +172,41 @@ class BookService:
             }
             update_fields["updated_at"] = datetime.now()
 
+            # Determine if summary should be regenerated
+            should_regenerate = regenerate_summary
+            if should_regenerate is None:
+                # Auto-detect: regenerate if key fields are updated
+                key_fields = {"title", "author", "description", "genre"}
+                updated_keys = set(update_fields.keys())
+                should_regenerate = bool(key_fields & updated_keys)
+
             doc_ref.update(update_fields)
 
-            # Fetch and return the updated book
-            return self.get_book_by_id(book_id)
+            # Fetch the updated book
+            updated_book = self.get_book_by_id(book_id)
+
+            # Regenerate AI summary if needed
+            if should_regenerate and updated_book:
+                try:
+                    from app.services.book_summary_service import get_book_summary_service
+                    summary_service = get_book_summary_service()
+                    await summary_service.generate_summary_for_book(
+                        updated_book,
+                        force_regenerate=True
+                    )
+                    print(f"✓ AI summary regenerated for book: {updated_book.title}")
+                except Exception as e:
+                    # Don't fail book update if summary generation fails
+                    print(f"Warning: Failed to regenerate summary for book {book_id}: {str(e)}")
+
+            return updated_book
         except Exception as e:
             raise Exception(f"Error updating book with ID {book_id}: {str(e)}")
 
     def delete_book(self, book_id: str) -> bool:
         """
         Delete a book from the bookstore.
+        Also deletes associated AI-generated summary.
 
         Args:
             book_id (str): The ID of the book to delete
@@ -174,7 +224,19 @@ class BookService:
             if not doc_ref.get().exists:
                 return False
 
+            # Delete the book
             doc_ref.delete()
+
+            # Delete associated summary if exists
+            try:
+                from app.services.book_summary_service import get_book_summary_service
+                summary_service = get_book_summary_service()
+                summary_service.delete_summary_by_book_id(book_id)
+                print(f"✓ Associated summary deleted for book {book_id}")
+            except Exception as e:
+                # Don't fail book deletion if summary deletion fails
+                print(f"Warning: Failed to delete summary for book {book_id}: {str(e)}")
+
             return True
         except Exception as e:
             raise Exception(f"Error deleting book with ID {book_id}: {str(e)}")
@@ -339,7 +401,7 @@ class BookService:
         except Exception as e:
             raise Exception(f"Error fetching new releases: {str(e)}")
 
-    def update_stock(self, book_id: str, quantity_change: int) -> Optional[Book]:
+    async def update_stock(self, book_id: str, quantity_change: int) -> Optional[Book]:
         """
         Update book stock quantity.
 
@@ -372,7 +434,7 @@ class BookService:
                 in_stock=(new_quantity > 0),
             )
 
-            return self.update_book(book_id, update_data)
+            return await self.update_book(book_id, update_data, regenerate_summary=False)
         except Exception as e:
             raise Exception(f"Error updating stock for book {book_id}: {str(e)}")
 
@@ -420,7 +482,7 @@ class BookService:
 
     # ==================== REVIEW OPERATIONS ====================
 
-    def create_review(self, review_data: BookReviewCreate) -> BookReview:
+    async def create_review(self, review_data: BookReviewCreate) -> BookReview:
         """Create a new book review."""
         try:
             now = datetime.now()
@@ -434,7 +496,7 @@ class BookService:
             doc_ref.set(data)
 
             # Update book's average rating and review count
-            self._update_book_rating(review_data.book_id)
+            await self._update_book_rating(review_data.book_id)
 
             return BookReview(
                 id=doc_ref.id,
@@ -458,7 +520,7 @@ class BookService:
         except Exception as e:
             raise Exception(f"Error fetching reviews for book {book_id}: {str(e)}")
 
-    def _update_book_rating(self, book_id: str) -> None:
+    async def _update_book_rating(self, book_id: str) -> None:
         """Update a book's average rating based on all reviews."""
         try:
             reviews = self.get_reviews_for_book(book_id)
@@ -470,7 +532,7 @@ class BookService:
             avg_rating = total_rating / len(reviews)
 
             update_data = BookUpdate(rating=round(avg_rating, 2), review_count=len(reviews))
-            self.update_book(book_id, update_data)
+            await self.update_book(book_id, update_data, regenerate_summary=False)
         except Exception as e:
             print(f"Warning: Error updating book rating: {str(e)}")
 
