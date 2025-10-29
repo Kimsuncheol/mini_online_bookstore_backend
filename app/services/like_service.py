@@ -21,11 +21,22 @@ from app.utils.firebase_config import get_firestore_client
 class LikeService:
     """Service class for like-related database operations."""
 
-    LIKES_COLLECTION = "likes"
+    LIKES_ROOT_COLLECTION = "likes"
+    LIKES_SUBCOLLECTION = "likes"
 
     def __init__(self):
         """Initialize the like service with Firestore client."""
         self.db: Any = get_firestore_client()
+
+    # ==================== HELPER METHODS FOR PATH BUILDING ====================
+
+    def _get_user_likes_ref(self, user_email: str):
+        """Get reference to user's likes subcollection."""
+        return (
+            self.db.collection(self.LIKES_ROOT_COLLECTION)
+            .document(user_email)
+            .collection(self.LIKES_SUBCOLLECTION)
+        )
 
     # ==================== LIKE CRUD OPERATIONS ====================
 
@@ -58,7 +69,7 @@ class LikeService:
                 "created_at": now,
             }
 
-            doc_ref = self.db.collection(self.LIKES_COLLECTION).document()
+            doc_ref = self._get_user_likes_ref(like_data.user_email).document()
             doc_ref.set(data)
 
             return Like(
@@ -71,12 +82,13 @@ class LikeService:
         except Exception as e:
             raise Exception(f"Error creating like: {str(e)}")
 
-    def remove_like(self, like_id: str) -> bool:
+    def remove_like(self, like_id: str, user_email: str) -> bool:
         """
         Remove a like from the user's liked books.
 
         Args:
             like_id (str): The ID of the like to remove
+            user_email (str): The user's email address
 
         Returns:
             bool: True if like was removed, False if doesn't exist
@@ -85,7 +97,7 @@ class LikeService:
             Exception: If there's an error removing the like
         """
         try:
-            doc_ref = self.db.collection(self.LIKES_COLLECTION).document(like_id)
+            doc_ref = self._get_user_likes_ref(user_email).document(like_id)
 
             # Check if document exists
             if not doc_ref.get().exists:
@@ -115,18 +127,19 @@ class LikeService:
             if not like:
                 return False
 
-            return self.remove_like(like.id)
+            return self.remove_like(like.id, user_email)
         except Exception as e:
             raise Exception(
                 f"Error removing like for book '{book_id}' by user '{user_email}': {str(e)}"
             )
 
-    def get_like_by_id(self, like_id: str) -> Optional[Like]:
+    def get_like_by_id(self, like_id: str, user_email: str) -> Optional[Like]:
         """
         Fetch a like by its ID.
 
         Args:
             like_id (str): The unique identifier of the like
+            user_email (str): The user's email address
 
         Returns:
             Optional[Like]: Like object if found, None otherwise
@@ -135,7 +148,7 @@ class LikeService:
             Exception: If there's an error fetching the like
         """
         try:
-            doc = self.db.collection(self.LIKES_COLLECTION).document(like_id).get()
+            doc = self._get_user_likes_ref(user_email).document(like_id).get()
 
             if doc.exists:
                 return self._document_to_like(doc)
@@ -160,9 +173,8 @@ class LikeService:
         """
         try:
             docs = (
-                self.db.collection(self.LIKES_COLLECTION)
+                self._get_user_likes_ref(user_email)
                 .where("book_id", "==", book_id)
-                .where("user_email", "==", user_email)
                 .limit(1)
                 .stream()
             )
@@ -192,8 +204,7 @@ class LikeService:
         """
         try:
             query = (
-                self.db.collection(self.LIKES_COLLECTION)
-                .where("user_email", "==", user_email)
+                self._get_user_likes_ref(user_email)
                 .order_by("created_at", direction="DESCENDING")
             )
 
@@ -221,17 +232,27 @@ class LikeService:
             Exception: If there's an error fetching likes
         """
         try:
-            query = (
-                self.db.collection(self.LIKES_COLLECTION)
-                .where("book_id", "==", book_id)
-                .order_by("created_at", direction="DESCENDING")
-            )
+            likes = []
+            # Get all users' documents in likes collection
+            users_docs = self.db.collection(self.LIKES_ROOT_COLLECTION).stream()
+
+            for user_doc in users_docs:
+                user_email = user_doc.id
+                # Query likes subcollection for this user
+                query = (
+                    self._get_user_likes_ref(user_email)
+                    .where("book_id", "==", book_id)
+                    .stream()
+                )
+                for doc in query:
+                    likes.append(self._document_to_like(doc))
+
+            # Sort by created_at descending
+            likes.sort(key=lambda x: x.created_at or datetime.now(), reverse=True)
 
             if limit:
-                query = query.limit(limit)
+                likes = likes[:limit]
 
-            docs = query.stream()
-            likes = [self._document_to_like(doc) for doc in docs]
             return likes
         except Exception as e:
             raise Exception(f"Error fetching likes for book '{book_id}': {str(e)}")
@@ -277,13 +298,19 @@ class LikeService:
             Exception: If there's an error counting likes
         """
         try:
-            docs = (
-                self.db.collection(self.LIKES_COLLECTION)
-                .where("book_id", "==", book_id)
-                .stream()
-            )
+            like_count = 0
+            # Get all users' documents in likes collection
+            users_docs = self.db.collection(self.LIKES_ROOT_COLLECTION).stream()
 
-            like_count = sum(1 for _ in docs)
+            for user_doc in users_docs:
+                user_email = user_doc.id
+                # Query likes subcollection for this user
+                docs = (
+                    self._get_user_likes_ref(user_email)
+                    .where("book_id", "==", book_id)
+                    .stream()
+                )
+                like_count += sum(1 for _ in docs)
 
             return LikeCountResponse(book_id=book_id, like_count=like_count)
         except Exception as e:
@@ -303,11 +330,7 @@ class LikeService:
             Exception: If there's an error counting likes
         """
         try:
-            docs = (
-                self.db.collection(self.LIKES_COLLECTION)
-                .where("user_email", "==", user_email)
-                .stream()
-            )
+            docs = self._get_user_likes_ref(user_email).stream()
 
             return sum(1 for _ in docs)
         except Exception as e:

@@ -54,12 +54,16 @@ async def add_like(like_data: LikeCreate):
 
 
 @router.delete("/{like_id}")
-async def remove_like(like_id: str = Path(..., description="The like ID")):
+async def remove_like(
+    like_id: str = Path(..., description="The like ID"),
+    user_email: str = Query(..., description="The user email"),
+):
     """
     Remove a like from user's liked books.
 
     Args:
         like_id (str): The ID of the like to remove
+        user_email (str): The user's email address
 
     Returns:
         dict: Confirmation message
@@ -69,7 +73,7 @@ async def remove_like(like_id: str = Path(..., description="The like ID")):
     """
     try:
         like_service = get_like_service()
-        success = like_service.remove_like(like_id)
+        success = like_service.remove_like(like_id, user_email)
 
         if not success:
             raise HTTPException(status_code=404, detail=f"Like with ID '{like_id}' not found")
@@ -293,12 +297,16 @@ async def toggle_like(like_data: LikeCreate):
 
 
 @router.get("/{like_id}")
-async def get_like(like_id: str = Path(..., description="The like ID")):
+async def get_like(
+    like_id: str = Path(..., description="The like ID"),
+    user_email: str = Query(..., description="The user email"),
+):
     """
     Fetch a like by its ID.
 
     Args:
         like_id (str): The unique identifier of the like
+        user_email (str): The user's email address
 
     Returns:
         Like: The like data
@@ -308,7 +316,7 @@ async def get_like(like_id: str = Path(..., description="The like ID")):
     """
     try:
         like_service = get_like_service()
-        like = like_service.get_like_by_id(like_id)
+        like = like_service.get_like_by_id(like_id, user_email)
 
         if like is None:
             raise HTTPException(status_code=404, detail=f"Like with ID '{like_id}' not found")
