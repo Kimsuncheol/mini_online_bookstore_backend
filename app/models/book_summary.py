@@ -8,6 +8,7 @@ These summaries are automatically created using LangChain when books are added o
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
+from app.models.book import Book
 
 
 class BookSummaryBase(BaseModel):
@@ -114,28 +115,19 @@ class BookSummary(BookSummaryBase):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
-class BookWithSummary(BaseModel):
+class BookWithSummary(Book):
     """
     Extended book model that includes AI-generated summary.
 
     Used for API responses that include both book data and summary.
     """
 
-    # Book fields (we'll import Book type but define inline for simplicity)
-    id: str
-    title: str
-    author: str
-    description: Optional[str]
-    genre: str
-    price: float
-    rating: Optional[float]
-    cover_image_url: Optional[str]
-    in_stock: bool
-
-    # Summary data
     summary: Optional[BookSummary] = Field(None, description="AI-generated summary")
 
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+    )
 
 
 class SummaryGenerationRequest(BaseModel):

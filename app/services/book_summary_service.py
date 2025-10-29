@@ -7,7 +7,7 @@ Automatically generates summaries, themes, and recommendations for books.
 
 import os
 import json
-from typing import Optional, Any, List
+from typing import Optional, Any, List, TYPE_CHECKING
 from datetime import datetime
 from google.cloud.firestore import DocumentSnapshot
 
@@ -23,6 +23,9 @@ from app.models.book_summary import (
     BookSummaryUpdate,
 )
 from app.utils.firebase_config import get_firestore_client
+
+if TYPE_CHECKING:
+    from app.services.book_service import BookService
 
 
 # Pydantic model for structured output parsing
@@ -46,9 +49,10 @@ class BookSummaryService:
 
     SUMMARIES_COLLECTION = "book_summaries"
 
-    def __init__(self):
+    def __init__(self, book_service: Optional["BookService"] = None):
         """Initialize the book summary service."""
         self.db: Any = get_firestore_client()
+        self._book_service: Optional["BookService"] = book_service
 
         # Initialize ChatGPT with LangChain
         self.llm = ChatOpenAI(
@@ -253,6 +257,17 @@ class BookSummaryService:
         except Exception as e:
             raise Exception(f"Error generating summary for book: {str(e)}")
 
+    def _get_book_service(self) -> Optional["BookService"]:
+        """Lazily obtain a book service instance for PDF access."""
+        if self._book_service is None:
+            try:
+                from app.services.book_service import get_book_service
+                self._book_service = get_book_service()
+            except Exception as exc:
+                print(f"Warning: Unable to initialize BookService for summaries: {str(exc)}")
+                self._book_service = None
+        return self._book_service
+
     async def _generate_summary_with_ai(self, book: Book) -> SummaryOutput:
         """
         Generate summary using LangChain and ChatGPT.
@@ -305,6 +320,27 @@ Publisher: {book.publisher or 'Unknown'}
 Language: {book.language or 'English'}
 Page Count: {book.page_count or 'Unknown'}
 """
+
+            pdf_preview: Optional[str] = None
+            book_service = self._get_book_service()
+            if book_service:
+                try:
+                    pdf_preview = book_service.get_pdf_preview_text(
+                        book,
+                        max_chars=1000,
+                        chunk_size=900,
+                        chunk_overlap=150,
+                    )
+                except Exception as preview_error:
+                    print(
+                        f"Warning: Failed to fetch PDF preview for book {book.id}: {str(preview_error)}"
+                    )
+
+            if pdf_preview:
+                trimmed_preview = pdf_preview.strip()
+                if len(trimmed_preview) > 1000:
+                    trimmed_preview = trimmed_preview[:1000].rstrip() + "..."
+                book_info += f"\nSample PDF Excerpt:\n{trimmed_preview}"
 
             # Create messages
             messages = [

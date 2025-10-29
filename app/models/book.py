@@ -7,11 +7,24 @@ Aligned with the client-side Book interfaces from BookNest application.
 
 from typing import Optional, List, Literal
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+
+
+def to_camel(string: str) -> str:
+    """Convert snake_case strings to camelCase for JSON serialization."""
+    parts = string.split("_")
+    if not parts:
+        return string
+    return parts[0] + "".join(word.capitalize() or "_" for word in parts[1:])
 
 
 class BookBase(BaseModel):
     """Base book model with common fields."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
     # Basic Information
     title: str = Field(..., min_length=1, max_length=500, description="Book title")
@@ -35,6 +48,12 @@ class BookBase(BaseModel):
     # Media
     cover_image: Optional[str] = Field(None, description="Cover image filename")
     cover_image_url: Optional[str] = Field(None, description="Cover image URL")
+    pdf_url: Optional[str] = Field(None, description="Public URL to download the book PDF")
+    pdf_file_name: Optional[str] = Field(
+        None,
+        max_length=255,
+        description="Filename or storage path for the book PDF in Firebase Storage",
+    )
 
     # Ratings and Reviews
     rating: Optional[float] = Field(None, ge=0, le=5, description="Average rating (0-5)")
@@ -59,6 +78,11 @@ class BookCreate(BookBase):
 class BookUpdate(BaseModel):
     """Book model for updating existing books."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
     # Basic Information
     title: Optional[str] = Field(None, min_length=1, max_length=500, description="Book title")
     author: Optional[str] = Field(None, min_length=1, max_length=255, description="Book author")
@@ -81,6 +105,12 @@ class BookUpdate(BaseModel):
     # Media
     cover_image: Optional[str] = Field(None, description="Cover image filename")
     cover_image_url: Optional[str] = Field(None, description="Cover image URL")
+    pdf_url: Optional[str] = Field(None, description="Public URL to download the book PDF")
+    pdf_file_name: Optional[str] = Field(
+        None,
+        max_length=255,
+        description="Filename or storage path for the book PDF in Firebase Storage",
+    )
 
     # Ratings and Reviews
     rating: Optional[float] = Field(None, ge=0, le=5, description="Average rating")
@@ -108,11 +138,11 @@ class Book(BookBase):
     created_at: datetime = Field(..., description="Book creation timestamp")
     updated_at: datetime = Field(..., description="Book last update timestamp")
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
 
 class BookFilterOptions(BaseModel):

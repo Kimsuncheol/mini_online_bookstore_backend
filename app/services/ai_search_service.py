@@ -789,19 +789,56 @@ class AISearchService:
                 # Get featured or popular books
                 books = self.book_service.get_featured_books(limit=20)
 
-            return [
-                {
+            books_context: List[Dict[str, Any]] = []
+
+            for index, book in enumerate(books):
+                book_data: Dict[str, Any] = {
                     "id": book.id,
                     "title": book.title,
                     "author": book.author,
                     "genre": book.genre,
                     "description": book.description,
                     "price": book.price,
+                    "original_price": book.original_price,
+                    "currency": book.currency,
                     "rating": book.rating,
+                    "review_count": book.review_count,
                     "in_stock": book.in_stock,
+                    "stock_quantity": book.stock_quantity,
+                    "language": book.language,
+                    "isbn": book.isbn,
+                    "published_date": book.published_date.isoformat() if book.published_date else None,
+                    "page_count": book.page_count,
+                    "cover_image_url": book.cover_image_url,
+                    "cover_image": book.cover_image,
+                    "pdf_url": book.pdf_url,
+                    "pdf_file_name": book.pdf_file_name,
+                    "publisher": book.publisher,
+                    "is_new": book.is_new,
+                    "is_featured": book.is_featured,
+                    "discount": book.discount,
+                    "created_at": book.created_at.isoformat() if isinstance(book.created_at, datetime) else None,
+                    "updated_at": book.updated_at.isoformat() if isinstance(book.updated_at, datetime) else None,
                 }
-                for book in books
-            ]
+
+                if index < 3:  # Limit expensive PDF preview extraction
+                    try:
+                        preview_text = self.book_service.get_pdf_preview_text(
+                            book,
+                            max_chars=600,
+                            chunk_size=700,
+                            chunk_overlap=120,
+                        )
+                        if preview_text:
+                            book_data["pdf_preview"] = preview_text
+                    except Exception as preview_error:
+                        print(
+                            f"Warning: Failed to fetch PDF preview for AI search (book {book.id}): {str(preview_error)}"
+                        )
+
+                books_context.append(book_data)
+
+            return books_context
         except Exception as e:
             print(f"Warning: Error fetching books context: {str(e)}")
             return []
@@ -827,13 +864,45 @@ class AISearchService:
         """
         try:
             # Format books catalog
-            books_catalog = "\n".join(
-                [
-                    f"- {book['title']} by {book['author']} ({book['genre']}) - ${book['price']}"
-                    + (f" - Rating: {book['rating']}/5" if book.get("rating") else "")
-                    for book in books_context[:10]  # Show top 10 books
-                ]
-            )
+            catalog_entries: List[str] = []
+            for book in books_context[:10]:  # Show top 10 books
+                title = book.get("title") or "Unknown Title"
+                author = book.get("author") or "Unknown Author"
+                genre = book.get("genre")
+
+                entry_parts = [f"- {title} by {author}"]
+                if genre:
+                    entry_parts[-1] += f" ({genre})"
+
+                price = book.get("price")
+                currency = book.get("currency")
+                if price is not None:
+                    price_str = f"${price}"
+                    if currency:
+                        price_str += f" {currency}"
+                    entry_parts.append(f"Price: {price_str}")
+                elif currency:
+                    entry_parts.append(f"Currency: {currency}")
+
+                rating = book.get("rating")
+                if rating:
+                    entry_parts.append(f"Rating: {rating}/5")
+
+                if book.get("in_stock") is False:
+                    entry_parts.append("Currently out of stock")
+
+                entry = " - ".join(entry_parts)
+
+                preview = book.get("pdf_preview")
+                if preview:
+                    snippet = " ".join(preview.split())
+                    if len(snippet) > 180:
+                        snippet = snippet[:180].rstrip() + "..."
+                    entry += f"\n  Sample: {snippet}"
+
+                catalog_entries.append(entry)
+
+            books_catalog = "\n".join(catalog_entries)
 
             # Format context info
             context_info = ""
@@ -912,7 +981,8 @@ class AISearchService:
                 # Cap at 1.0
                 relevance_score = min(relevance_score, 1.0)
 
-                reason = f"Based on your interest in {book['genre']} books"
+                genre_label = book.get("genre") or "various"
+                reason = f"Based on your interest in {genre_label} books"
                 if book.get("rating") and book["rating"] >= 4.0:
                     reason += f" and its high rating of {book['rating']}/5"
 
@@ -923,7 +993,28 @@ class AISearchService:
                         author=book["author"],
                         relevance_score=round(relevance_score, 2),
                         reason=reason,
-                        price=book["price"],
+                        price=book.get("price"),
+                        original_price=book.get("original_price"),
+                        currency=book.get("currency"),
+                        description=book.get("description"),
+                        genre=book.get("genre"),
+                        language=book.get("language"),
+                        isbn=book.get("isbn"),
+                        published_date=book.get("published_date"),
+                        page_count=book.get("page_count"),
+                        publisher=book.get("publisher"),
+                        cover_image_url=book.get("cover_image_url"),
+                        cover_image=book.get("cover_image"),
+                        pdf_url=book.get("pdf_url"),
+                        pdf_file_name=book.get("pdf_file_name"),
+                        in_stock=book.get("in_stock"),
+                        stock_quantity=book.get("stock_quantity"),
+                        rating=book.get("rating"),
+                        review_count=book.get("review_count"),
+                        is_new=book.get("is_new"),
+                        is_featured=book.get("is_featured"),
+                        discount=book.get("discount"),
+                        preview_text=book.get("pdf_preview"),
                     )
                 )
 

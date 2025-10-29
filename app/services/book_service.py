@@ -6,8 +6,9 @@ Includes CRUD operations, filtering, searching, and sorting functionality.
 Now includes AI-powered summary generation using LangChain.
 """
 
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Union
 from datetime import datetime
+from urllib.parse import urlparse, unquote
 from google.cloud.firestore import DocumentSnapshot
 from app.models.book import (
     Book,
@@ -22,6 +23,15 @@ from app.models.book import (
     BookReviewUpdate,
 )
 from app.utils.firebase_config import get_firestore_client
+from app.utils.pdf_loader import (
+    PDFLoaderError,
+    PDFNotFoundError,
+    PDFProcessingError,
+    download_pdf_from_storage,
+    load_pdf_from_storage,
+    load_and_split_pdf_from_storage,
+)
+from langchain_core.documents import Document
 import asyncio
 
 
@@ -31,10 +41,181 @@ class BookService:
     BOOKS_COLLECTION = "books"
     CATEGORIES_COLLECTION = "categories"
     REVIEWS_COLLECTION = "reviews"
+    DEFAULT_PDF_CHUNK_SIZE = 1000
+    DEFAULT_PDF_CHUNK_OVERLAP = 200
+    DEFAULT_PDF_PREVIEW_CHARS = 2000
 
     def __init__(self):
         """Initialize the book service with Firestore client."""
         self.db: Any = get_firestore_client()
+
+    # ==================== PDF OPERATIONS ====================
+
+    def download_book_pdf(
+        self,
+        book_or_id: Union[Book, str],
+        *,
+        raise_errors: bool = False,
+    ) -> Optional[bytes]:
+        """
+        Download raw PDF bytes for a book from Firebase Storage.
+
+        Args:
+            book_or_id: Book instance or book ID
+            raise_errors: If True, propagate loader exceptions instead of returning None
+
+        Returns:
+            Optional[bytes]: PDF content if available, otherwise None
+        """
+        book = self._ensure_book_instance(book_or_id)
+        if not book:
+            return None
+
+        bucket_path = self._resolve_pdf_storage_path(book)
+        if not bucket_path:
+            return None
+
+        try:
+            return download_pdf_from_storage(bucket_path)
+        except PDFNotFoundError:
+            return None
+        except (PDFLoaderError, PDFProcessingError) as exc:
+            if raise_errors:
+                raise Exception(
+                    f"Error downloading PDF for book {book.id}: {str(exc)}"
+                ) from exc
+            print(f"Warning: Error downloading PDF for book {book.id}: {str(exc)}")
+            return None
+
+    def load_book_pdf_documents(
+        self,
+        book_or_id: Union[Book, str],
+        *,
+        raise_errors: bool = False,
+    ) -> List[Document]:
+        """
+        Load PDF pages as LangChain Document objects without splitting.
+
+        Args:
+            book_or_id: Book instance or book ID
+            raise_errors: If True, propagate loader exceptions instead of returning []
+
+        Returns:
+            List[Document]: List of PDF page documents
+        """
+        book = self._ensure_book_instance(book_or_id)
+        if not book:
+            return []
+
+        bucket_path = self._resolve_pdf_storage_path(book)
+        if not bucket_path:
+            return []
+
+        try:
+            return load_pdf_from_storage(bucket_path)
+        except PDFNotFoundError:
+            return []
+        except (PDFLoaderError, PDFProcessingError) as exc:
+            if raise_errors:
+                raise Exception(
+                    f"Error loading PDF for book {book.id}: {str(exc)}"
+                ) from exc
+            print(f"Warning: Error loading PDF for book {book.id}: {str(exc)}")
+            return []
+
+    def load_and_split_book_pdf(
+        self,
+        book_or_id: Union[Book, str],
+        *,
+        chunk_size: int = DEFAULT_PDF_CHUNK_SIZE,
+        chunk_overlap: int = DEFAULT_PDF_CHUNK_OVERLAP,
+        raise_errors: bool = False,
+    ) -> List[Document]:
+        """
+        Load and split a book PDF into LangChain Documents for downstream processing.
+
+        Args:
+            book_or_id: Book instance or book ID
+            chunk_size: Target chunk size for splitting
+            chunk_overlap: Number of overlapping characters between chunks
+            raise_errors: If True, propagate loader exceptions instead of returning []
+
+        Returns:
+            List[Document]: Chunked PDF documents
+        """
+        book = self._ensure_book_instance(book_or_id)
+        if not book:
+            return []
+
+        bucket_path = self._resolve_pdf_storage_path(book)
+        if not bucket_path:
+            return []
+
+        try:
+            return load_and_split_pdf_from_storage(
+                bucket_path,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
+        except PDFNotFoundError:
+            return []
+        except (PDFLoaderError, PDFProcessingError) as exc:
+            if raise_errors:
+                raise Exception(
+                    f"Error loading and splitting PDF for book {book.id}: {str(exc)}"
+                ) from exc
+            print(f"Warning: Error loading and splitting PDF for book {book.id}: {str(exc)}")
+            return []
+
+    def get_pdf_preview_text(
+        self,
+        book_or_id: Union[Book, str],
+        *,
+        max_chars: int = DEFAULT_PDF_PREVIEW_CHARS,
+        chunk_size: int = 800,
+        chunk_overlap: int = 120,
+    ) -> Optional[str]:
+        """
+        Get a short textual preview extracted from the book PDF.
+
+        Args:
+            book_or_id: Book instance or book ID
+            max_chars: Maximum number of characters to include in the preview
+            chunk_size: Chunk size to use when splitting the PDF
+            chunk_overlap: Chunk overlap used when splitting the PDF
+
+        Returns:
+            Optional[str]: Preview text or None if unavailable
+        """
+        chunks = self.load_and_split_book_pdf(
+            book_or_id,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+        if not chunks:
+            return None
+
+        preview_parts: List[str] = []
+        remaining = max_chars
+
+        for chunk in chunks:
+            text = (chunk.page_content or "").strip()
+            if not text:
+                continue
+
+            if len(text) > remaining:
+                preview_parts.append(text[:remaining])
+                remaining = 0
+            else:
+                preview_parts.append(text)
+                remaining -= len(text)
+
+            if remaining <= 0:
+                break
+
+        preview_text = "\n\n".join(part.strip() for part in preview_parts if part.strip())
+        return preview_text or None
 
     # ==================== BOOK CRUD OPERATIONS ====================
 
@@ -538,6 +719,58 @@ class BookService:
 
     # ==================== HELPER METHODS ====================
 
+    def _ensure_book_instance(self, book_or_id: Union[Book, str]) -> Optional[Book]:
+        """Ensure downstream helpers always operate on a Book instance."""
+        if isinstance(book_or_id, Book):
+            return book_or_id
+        if not book_or_id:
+            return None
+        return self.get_book_by_id(str(book_or_id))
+
+    @staticmethod
+    def _resolve_pdf_storage_path(book: Book) -> Optional[str]:
+        """Resolve the Firebase Storage object path for a book PDF."""
+        if not book:
+            return None
+
+        if book.pdf_file_name:
+            return book.pdf_file_name.lstrip("/")
+
+        if book.pdf_url:
+            return BookService._extract_path_from_pdf_url(book.pdf_url)
+
+        return None
+
+    @staticmethod
+    def _extract_path_from_pdf_url(pdf_url: str) -> Optional[str]:
+        """Extract a storage object path from a public Firebase Storage URL."""
+        if not pdf_url:
+            return None
+
+        trimmed = pdf_url.strip()
+        if not trimmed:
+            return None
+
+        if trimmed.startswith("gs://"):
+            path_parts = trimmed[5:].split("/", 1)
+            if len(path_parts) == 2 and path_parts[1]:
+                return path_parts[1]
+            return None
+
+        if trimmed.startswith(("http://", "https://")):
+            parsed = urlparse(trimmed)
+            if "firebasestorage.googleapis.com" in parsed.netloc and "/o/" in parsed.path:
+                encoded_path = parsed.path.split("/o/", 1)[1]
+                return unquote(encoded_path)
+
+            # Support signed URLs where the filename is the last segment
+            filename = parsed.path.rsplit("/", 1)[-1]
+            if filename.lower().endswith(".pdf"):
+                return filename
+            return None
+
+        return trimmed.lstrip("/")
+
     def _sort_books(self, books: List[Book], sort_by: str) -> List[Book]:
         """Sort books based on the specified criteria."""
         if sort_by == "price-low-to-high":
@@ -576,6 +809,8 @@ class BookService:
             stock_quantity=data.get("stock_quantity"),
             cover_image=data.get("cover_image"),
             cover_image_url=data.get("cover_image_url"),
+            pdf_url=data.get("pdf_url") or data.get("pdfUrl"),
+            pdf_file_name=data.get("pdf_file_name") or data.get("pdfFileName"),
             rating=data.get("rating"),
             review_count=data.get("review_count", 0),
             publisher=data.get("publisher"),

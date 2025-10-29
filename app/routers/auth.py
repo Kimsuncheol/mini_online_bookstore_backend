@@ -13,6 +13,11 @@ from typing import Literal, Optional
 from pydantic import AliasChoices, BaseModel, EmailStr, Field
 from app.services.auth_service import get_auth_service
 from app.models.member import UserPreferences
+from app.models.oauth import (
+    KakaoSignUpRequest,
+    KakaoSignInRequest,
+    KakaoAuthResponse,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -243,4 +248,103 @@ async def verify_session(user_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error verifying session: {str(e)}",
+        )
+
+
+# ==================== KAKAO OAUTH ENDPOINTS ====================
+
+
+@router.post(
+    "/kakao/signup",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KakaoAuthResponse,
+)
+async def sign_up_with_kakao(request: KakaoSignUpRequest):
+    """
+    Sign up a new user using KakaoTalk OAuth.
+
+    This endpoint handles the OAuth callback from KakaoTalk and creates a new user account
+    if the email doesn't already exist.
+
+    Args:
+        request (KakaoSignUpRequest): OAuth code from KakaoTalk callback
+
+    Returns:
+        KakaoAuthResponse: User information and success message
+
+    Raises:
+        HTTPException:
+            - 400 if KakaoTalk authentication fails or email verification fails
+            - 500 if database error occurs
+    """
+    try:
+        auth_service = get_auth_service()
+        user, is_new = await auth_service.sign_up_with_kakao(
+            kakao_code=request.code,
+            display_name=request.display_name,
+            redirect_uri=request.redirect_uri,
+        )
+
+        return KakaoAuthResponse(
+            id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            photo_url=user.photo_url,
+            kakao_id=user.kakao_id,
+            is_new_user=is_new,
+            message="User signed up successfully with KakaoTalk"
+            if is_new
+            else "User already exists, KakaoTalk account linked",
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error signing up with KakaoTalk: {str(e)}",
+        )
+
+
+@router.post("/kakao/signin", response_model=KakaoAuthResponse)
+async def sign_in_with_kakao(request: KakaoSignInRequest):
+    """
+    Sign in an existing user using KakaoTalk OAuth.
+
+    This endpoint handles the OAuth callback from KakaoTalk and authenticates an existing user.
+
+    Args:
+        request (KakaoSignInRequest): OAuth code from KakaoTalk callback
+
+    Returns:
+        KakaoAuthResponse: User information and success message
+
+    Raises:
+        HTTPException:
+            - 400 if KakaoTalk authentication fails or user not found
+            - 500 if database error occurs
+    """
+    try:
+        auth_service = get_auth_service()
+        user = await auth_service.sign_in_with_kakao(
+            kakao_code=request.code,
+            redirect_uri=request.redirect_uri,
+        )
+
+        return KakaoAuthResponse(
+            id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            photo_url=user.photo_url,
+            kakao_id=user.kakao_id,
+            is_new_user=False,
+            message="User signed in successfully with KakaoTalk",
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error signing in with KakaoTalk: {str(e)}",
         )

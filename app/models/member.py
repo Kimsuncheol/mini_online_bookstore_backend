@@ -71,6 +71,21 @@ class UserBase(BaseModel):
     preferences: Optional[UserPreferences] = Field(
         None, description="User notification and marketing preferences"
     )
+    # OAuth authentication fields
+    kakao_id: Optional[str] = Field(
+        None,
+        description="KakaoTalk user ID (from Kakao OAuth)",
+        alias="kakaoId",
+        validation_alias=AliasChoices("kakaoId", "kakao_id"),
+        serialization_alias="kakaoId",
+    )
+    kakao_connected_at: Optional[datetime] = Field(
+        None,
+        description="When the KakaoTalk account was connected",
+        alias="kakaoConnectedAt",
+        validation_alias=AliasChoices("kakaoConnectedAt", "kakao_connected_at"),
+        serialization_alias="kakaoConnectedAt",
+    )
 
     class Config:
         """Allow population by field name for base model."""

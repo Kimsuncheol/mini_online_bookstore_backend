@@ -10,6 +10,14 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
 
+def to_camel(string: str) -> str:
+    """Convert snake_case strings to camelCase."""
+    parts = string.split("_")
+    if not parts:
+        return string
+    return parts[0] + "".join(word.capitalize() or "_" for word in parts[1:])
+
+
 # ==================== NESTED MODELS ====================
 
 
@@ -39,13 +47,43 @@ class ModelConfig(BaseModel):
 class RecommendedBook(BaseModel):
     """Recommended book from AI analysis."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
     book_id: str = Field(..., description="Book identifier")
     title: str = Field(..., description="Book title")
     author: str = Field(..., description="Book author")
     relevance_score: float = Field(..., ge=0, le=1, description="Relevance to question (0-1)")
     reason: str = Field(..., description="Why this book was recommended")
     price: Optional[float] = Field(None, description="Book price")
+    original_price: Optional[float] = Field(None, description="Original list price")
+    currency: Optional[str] = Field(None, description="Currency code (ISO 4217)")
+    description: Optional[str] = Field(None, description="Short synopsis or description")
+    genre: Optional[str] = Field(None, description="Primary genre classification")
+    language: Optional[str] = Field(None, description="Language of the book")
+    isbn: Optional[str] = Field(None, description="ISBN identifier")
+    published_date: Optional[datetime] = Field(None, description="Publication date")
+    page_count: Optional[int] = Field(None, description="Number of pages")
+    publisher: Optional[str] = Field(None, description="Publisher name")
     cover_image_url: Optional[str] = Field(None, description="Cover image URL")
+    cover_image: Optional[str] = Field(None, description="Cover image filename")
+    pdf_url: Optional[str] = Field(None, description="Public URL to the book PDF")
+    pdf_file_name: Optional[str] = Field(
+        None, description="Storage path or filename for the book PDF"
+    )
+    in_stock: Optional[bool] = Field(None, description="Availability status")
+    stock_quantity: Optional[int] = Field(None, description="Units in stock")
+    rating: Optional[float] = Field(None, description="Average rating")
+    review_count: Optional[int] = Field(None, description="Number of reviews")
+    is_new: Optional[bool] = Field(None, description="Flag for new releases")
+    is_featured: Optional[bool] = Field(None, description="Flag for featured titles")
+    discount: Optional[float] = Field(None, description="Discount percentage")
+    preview_text: Optional[str] = Field(
+        None,
+        description="Short excerpt extracted from the book PDF for context",
+    )
 
 
 class ModelMetadata(BaseModel):
