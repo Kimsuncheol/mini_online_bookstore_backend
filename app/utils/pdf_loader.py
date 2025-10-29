@@ -2,12 +2,11 @@
 PDF Loader Utility
 
 Provides utility functions to load PDF files from Firebase Storage
-and split their text using LangChain's semantic chunking.
+and split their text using LangChain's recursive character splitting.
 
 Uses:
 - PyMuPDFLoader: For loading PDF documents
-- SemanticChunker: For intelligent text splitting based on semantic similarity
-- OpenAIEmbeddings: For computing embeddings to determine semantic boundaries
+- RecursiveCharacterTextSplitter: For intelligent text splitting that preserves structure
 """
 
 import os
@@ -16,8 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_experimental.text_splitter import SemanticChunker
-from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
 from app.utils.firebase_config import FirebaseConfig
@@ -160,26 +158,23 @@ def load_pdf_from_storage(
 def split_pdf_text(
     documents: List[Document],
     chunk_size: int = 1000,
-    break_point_percentile_threshold: int = 95,
-    use_semantic_chunking: bool = True,
+    chunk_overlap: int = 200,
 ) -> List[Document]:
     """
-    Split PDF text using semantic chunking based on semantic similarity.
+    Split PDF text using recursive character splitting.
 
-    The SemanticChunker uses embeddings to find the most coherent chunk
-    boundaries by looking at the semantic similarity between consecutive chunks.
+    RecursiveCharacterTextSplitter intelligently splits text while preserving
+    semantic structure by recursively splitting on different separators
+    (paragraphs, sentences, words) until chunks reach the target size.
 
     Args:
         documents (List[Document]): List of documents from PDF loader
         chunk_size (int): Target chunk size in characters (default: 1000)
-        break_point_percentile_threshold (int): Percentile threshold for determining
-                                               breakpoints based on semantic distance
-                                               (default: 95, meaning breaks at larger distances)
-        use_semantic_chunking (bool): Whether to use semantic chunking. If False,
-                                     uses basic character splitting (default: True)
+        chunk_overlap (int): Number of overlapping characters between chunks
+                            (default: 200, helps maintain context)
 
     Returns:
-        List[Document]: List of split documents with semantic awareness
+        List[Document]: List of split documents
 
     Raises:
         PDFProcessingError: If splitting fails
@@ -188,27 +183,15 @@ def split_pdf_text(
         if not documents:
             return []
 
-        if not use_semantic_chunking:
-            # Fallback to simple character splitting
-            from langchain_text_splitters import CharacterTextSplitter
-
-            splitter = CharacterTextSplitter(
-                chunk_size=chunk_size,
-                chunk_overlap=200,
-                separator="\n",
-            )
-            return splitter.split_documents(documents)
-
-        # Use SemanticChunker for intelligent splitting
-        embeddings = OpenAIEmbeddings()
-
-        semantic_splitter = SemanticChunker(
-            embeddings=embeddings,
-            breakpoint_threshold_type="percentile",
-            breakpoint_threshold_amount=break_point_percentile_threshold,
+        # Use RecursiveCharacterTextSplitter for intelligent splitting
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", " ", ""],  # Recursive splitting strategy
+            length_function=len,
         )
 
-        split_docs = semantic_splitter.split_documents(documents)
+        split_docs = splitter.split_documents(documents)
         return split_docs
 
     except Exception as e:
@@ -219,22 +202,19 @@ def load_and_split_pdf_from_storage(
     bucket_path: str,
     bucket_name: Optional[str] = None,
     chunk_size: int = 1000,
-    break_point_percentile_threshold: int = 95,
-    use_semantic_chunking: bool = True,
+    chunk_overlap: int = 200,
 ) -> List[Document]:
     """
     Load a PDF from Firebase Storage and split its text in one operation.
 
     This is a convenience function that combines load_pdf_from_storage
-    and split_pdf_text operations.
+    and split_pdf_text operations using recursive character splitting.
 
     Args:
         bucket_path (str): Path to the PDF file in Firebase Storage
         bucket_name (Optional[str]): Firebase Storage bucket name
         chunk_size (int): Target chunk size in characters (default: 1000)
-        break_point_percentile_threshold (int): Percentile threshold for semantic breaks
-                                               (default: 95)
-        use_semantic_chunking (bool): Whether to use semantic chunking (default: True)
+        chunk_overlap (int): Overlapping characters between chunks (default: 200)
 
     Returns:
         List[Document]: List of split documents with metadata
@@ -251,8 +231,7 @@ def load_and_split_pdf_from_storage(
         split_documents = split_pdf_text(
             documents,
             chunk_size=chunk_size,
-            break_point_percentile_threshold=break_point_percentile_threshold,
-            use_semantic_chunking=use_semantic_chunking,
+            chunk_overlap=chunk_overlap,
         )
 
         return split_documents
@@ -312,20 +291,17 @@ def load_pdf_from_local_path(
 def load_and_split_pdf_from_local(
     file_path: str,
     chunk_size: int = 1000,
-    break_point_percentile_threshold: int = 95,
-    use_semantic_chunking: bool = True,
+    chunk_overlap: int = 200,
 ) -> List[Document]:
     """
     Load a PDF from local filesystem and split its text in one operation.
 
-    Useful for development and testing.
+    Useful for development and testing using recursive character splitting.
 
     Args:
         file_path (str): Path to the PDF file on the local filesystem
         chunk_size (int): Target chunk size in characters (default: 1000)
-        break_point_percentile_threshold (int): Percentile threshold for semantic breaks
-                                               (default: 95)
-        use_semantic_chunking (bool): Whether to use semantic chunking (default: True)
+        chunk_overlap (int): Overlapping characters between chunks (default: 200)
 
     Returns:
         List[Document]: List of split documents with metadata
@@ -342,8 +318,7 @@ def load_and_split_pdf_from_local(
         split_documents = split_pdf_text(
             documents,
             chunk_size=chunk_size,
-            break_point_percentile_threshold=break_point_percentile_threshold,
-            use_semantic_chunking=use_semantic_chunking,
+            chunk_overlap=chunk_overlap,
         )
 
         return split_documents
