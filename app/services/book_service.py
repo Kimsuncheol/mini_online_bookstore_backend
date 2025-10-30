@@ -10,6 +10,7 @@ from typing import List, Optional, Any, Dict, Union
 from datetime import datetime
 from urllib.parse import urlparse, unquote
 from google.cloud.firestore import DocumentSnapshot
+import logging
 from app.models.book import (
     Book,
     BookCreate,
@@ -33,6 +34,8 @@ from app.utils.pdf_loader import (
 )
 from langchain_core.documents import Document
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 class BookService:
@@ -235,13 +238,13 @@ class BookService:
             Exception: If there's an error creating the book
         """
         try:
+            logger.info("Received book creation payload: %s", book_data.model_dump())
             now = datetime.now()
             data = {
                 **book_data.model_dump(),
                 "created_at": now,
                 "updated_at": now,
             }
-
             # Convert datetime fields to Firestore timestamps if present
             if data.get("published_date"):
                 data["published_date"] = data["published_date"]

@@ -1,2 +1,50 @@
+# env & secrets
 .env*
-.keys
+*.env
+.envrc
+*.key
+*.pem
+*.p12
+*.keystore
+*.jks
+.keys/
+secrets/
+credentials/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.dist-info/
+.build/
+.eggs/
+.venv/
+venv/
+ENV/
+env/
+
+# tooling
+.coverage
+htmlcov/
+pytest-cache/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+ruff_cache/
+
+# logs & runtime
+*.log
+logs/
+tmp/
+.cache/
+*.sqlite3
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
