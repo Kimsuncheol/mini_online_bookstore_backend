@@ -7,6 +7,7 @@ Automatically generates summaries, themes, and recommendations for books.
 
 import os
 import json
+import logging
 from typing import Optional, Any, List, TYPE_CHECKING
 from datetime import datetime
 from google.cloud.firestore import DocumentSnapshot
@@ -27,6 +28,8 @@ from app.utils.firebase_config import get_firestore_client
 if TYPE_CHECKING:
     from app.services.book_service import BookService
 
+logger = logging.getLogger(__name__)
+
 
 # Pydantic model for structured output parsing
 class SummaryOutput(BaseModel):
@@ -41,7 +44,7 @@ class SummaryOutput(BaseModel):
     content_warnings: List[str] = Field(description="Content warnings, empty if none")
     similar_books_tags: List[str] = Field(description="3-5 tags for finding similar books")
     why_read_this: str = Field(description="Compelling reason to read this book")
-    confidence: float = Field(description="Confidence score 0-1")
+    ai_confidence_score: float = Field(description="Confidence score 0-1")
 
 
 class BookSummaryService:
@@ -264,7 +267,7 @@ class BookSummaryService:
                 from app.services.book_service import get_book_service
                 self._book_service = get_book_service()
             except Exception as exc:
-                print(f"Warning: Unable to initialize BookService for summaries: {str(exc)}")
+                logger.warning("Unable to initialize BookService for summaries: %s", exc)
                 self._book_service = None
         return self._book_service
 
@@ -294,7 +297,7 @@ You must respond with a valid JSON object matching this exact structure:
     "content_warnings": ["warning1", "warning2"] or [],
     "similar_books_tags": ["tag1", "tag2", "tag3"],
     "why_read_this": "Compelling reason to read",
-    "confidence": 0.85
+    "ai_confidence_score": 0.85
 }
 
 Guidelines:
@@ -305,7 +308,7 @@ Guidelines:
 - Include content warnings only if necessary (violence, mature themes, etc.)
 - Provide 3-5 tags that would help find similar books
 - Write a compelling "why read this" that captures the book's unique value
-- Set confidence between 0.7-0.95 based on available information
+- Set ai_confidence_score between 0.7-0.95 based on available information
 
 Return ONLY the JSON object, no additional text."""
 
@@ -332,8 +335,8 @@ Page Count: {book.page_count or 'Unknown'}
                         chunk_overlap=150,
                     )
                 except Exception as preview_error:
-                    print(
-                        f"Warning: Failed to fetch PDF preview for book {book.id}: {str(preview_error)}"
+                    logger.warning(
+                        "Failed to fetch PDF preview for book %s: %s", book.id, preview_error
                     )
 
             if pdf_preview:
@@ -380,15 +383,18 @@ Page Count: {book.page_count or 'Unknown'}
                     content_warnings=summary_dict.get("content_warnings", []),
                     similar_books_tags=summary_dict.get("similar_books_tags", []),
                     why_read_this=summary_dict.get("why_read_this", ""),
-                    confidence=summary_dict.get("confidence", 0.8),
+                    ai_confidence_score=summary_dict.get(
+                        "ai_confidence_score",
+                        summary_dict.get("confidence", 0.8),
+                    ),
                 )
 
                 return summary_output
 
             except json.JSONDecodeError as e:
                 # Fallback to basic summary if JSON parsing fails
-                print(f"Warning: Failed to parse AI response as JSON: {str(e)}")
-                print(f"Response content: {response.content[:200]}")
+                logger.warning("Failed to parse AI response as JSON: %s", e)
+                logger.debug("AI response content (truncated): %s", response.content[:200])
 
                 # Return a basic summary based on book info
                 return SummaryOutput(
@@ -401,7 +407,7 @@ Page Count: {book.page_count or 'Unknown'}
                     content_warnings=[],
                     similar_books_tags=[book.genre, book.author],
                     why_read_this=f"Experience {book.author}'s unique perspective on {book.genre}.",
-                    confidence=0.5,
+                    ai_confidence_score=0.5,
                 )
 
         except Exception as e:
@@ -439,7 +445,7 @@ Page Count: {book.page_count or 'Unknown'}
                 summaries.append(summary)
 
             except Exception as e:
-                print(f"Warning: Failed to generate summary for book {book.id}: {str(e)}")
+                logger.warning("Failed to generate summary for book %s: %s", book.id, e)
                 continue
 
         return summaries

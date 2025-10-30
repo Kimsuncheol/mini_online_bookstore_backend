@@ -8,8 +8,11 @@ Now includes AI-powered summary generation using LangChain.
 
 from typing import List, Optional, Any, Dict, Union
 from datetime import datetime
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, quote
 from google.cloud.firestore import DocumentSnapshot
+from fastapi import UploadFile
+from uuid import uuid4
+import re
 import logging
 from app.models.book import (
     Book,
@@ -23,7 +26,7 @@ from app.models.book import (
     BookReviewCreate,
     BookReviewUpdate,
 )
-from app.utils.firebase_config import get_firestore_client
+from app.utils.firebase_config import get_firestore_client, FirebaseConfig
 from app.utils.pdf_loader import (
     PDFLoaderError,
     PDFNotFoundError,
@@ -222,7 +225,12 @@ class BookService:
 
     # ==================== BOOK CRUD OPERATIONS ====================
 
-    async def create_book(self, book_data: BookCreate, generate_summary: bool = True) -> Book:
+    async def create_book(
+        self,
+        book_data: BookCreate,
+        generate_summary: bool = True,
+        pdf_file: Optional[UploadFile] = None,
+    ) -> Book:
         """
         Create a new book in the bookstore.
         Automatically generates AI-powered summary if enabled.
@@ -230,6 +238,7 @@ class BookService:
         Args:
             book_data (BookCreate): The book data to create
             generate_summary (bool): Whether to generate AI summary (default: True)
+            pdf_file (Optional[UploadFile]): Optional PDF file to upload to Firebase Storage
 
         Returns:
             Book: The created book object with ID
@@ -240,8 +249,16 @@ class BookService:
         try:
             logger.info("Received book creation payload: %s", book_data.model_dump())
             now = datetime.now()
+            doc_ref = self.db.collection(self.BOOKS_COLLECTION).document()
+
+            payload = book_data.model_dump(exclude_none=True)
+
+            if pdf_file:
+                pdf_metadata = await self._upload_pdf_to_storage(pdf_file, doc_ref.id)
+                payload.update(pdf_metadata)
+
             data = {
-                **book_data.model_dump(),
+                **payload,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -249,14 +266,13 @@ class BookService:
             if data.get("published_date"):
                 data["published_date"] = data["published_date"]
 
-            doc_ref = self.db.collection(self.BOOKS_COLLECTION).document()
             doc_ref.set(data)
 
             created_book = Book(
                 id=doc_ref.id,
                 created_at=now,
                 updated_at=now,
-                **book_data.model_dump(),
+                **payload,
             )
 
             # Generate AI summary asynchronously if enabled
@@ -265,12 +281,16 @@ class BookService:
                     from app.services.book_summary_service import get_book_summary_service
                     summary_service = get_book_summary_service()
                     await summary_service.generate_summary_for_book(created_book)
-                    print(f"✓ AI summary generated for book: {created_book.title}")
+                    logger.info("AI summary generated for book %s", created_book.title)
                 except Exception as e:
                     # Don't fail book creation if summary generation fails
-                    print(f"Warning: Failed to generate summary for book {created_book.id}: {str(e)}")
+                    logger.warning(
+                        "Failed to generate summary for book %s: %s", created_book.id, e
+                    )
 
             return created_book
+        except ValueError:
+            raise
         except Exception as e:
             raise Exception(f"Error creating book: {str(e)}")
 
@@ -773,6 +793,63 @@ class BookService:
             return None
 
         return trimmed.lstrip("/")
+
+    @staticmethod
+    def _sanitize_pdf_filename(filename: str, fallback: str) -> str:
+        """Sanitize uploaded PDF filename for safe storage."""
+        candidate = (filename or "").strip()
+        if not candidate:
+            candidate = fallback
+
+        candidate = candidate.replace("\\", "/").split("/")[-1]
+        sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", candidate)
+        if not sanitized.lower().endswith(".pdf"):
+            sanitized = f"{sanitized}.pdf"
+        return sanitized
+
+    async def _upload_pdf_to_storage(
+        self,
+        pdf_file: UploadFile,
+        book_id: str,
+    ) -> Dict[str, str]:
+        """Upload an uploaded PDF file to Firebase Storage and return metadata."""
+        if pdf_file.content_type and "pdf" not in pdf_file.content_type.lower():
+            raise ValueError("Uploaded file must be a PDF document")
+
+        file_bytes = await pdf_file.read()
+        try:
+            await pdf_file.seek(0)
+        except Exception:
+            # Ignore seek errors; not critical for upload flow
+            pass
+        if not file_bytes:
+            raise ValueError("Uploaded PDF file is empty")
+
+        FirebaseConfig.get_app()
+        from firebase_admin import storage
+
+        bucket = storage.bucket()
+        sanitized_filename = self._sanitize_pdf_filename(pdf_file.filename or "", f"{book_id}.pdf")
+        storage_path = f"books/{book_id}/{sanitized_filename}"
+
+        download_token = str(uuid4())
+        blob = bucket.blob(storage_path)
+        blob.metadata = {"firebaseStorageDownloadTokens": download_token}
+        blob.upload_from_string(
+            file_bytes,
+            content_type=pdf_file.content_type or "application/pdf",
+        )
+
+        pdf_url = (
+            f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/"
+            f"{quote(storage_path, safe='')}"
+            f"?alt=media&token={download_token}"
+        )
+
+        return {
+            "pdf_file_name": storage_path,
+            "pdf_url": pdf_url,
+        }
 
     def _sort_books(self, books: List[Book], sort_by: str) -> List[Book]:
         """Sort books based on the specified criteria."""

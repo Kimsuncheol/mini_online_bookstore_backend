@@ -173,6 +173,11 @@ class BookFilterOptions(BaseModel):
 class BookCategoryBase(BaseModel):
     """Base book category model."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
     name: str = Field(..., min_length=1, max_length=100, description="Category name")
     description: Optional[str] = Field(None, description="Category description")
     icon: Optional[str] = Field(None, description="Category icon URL or name")
@@ -187,6 +192,11 @@ class BookCategoryCreate(BookCategoryBase):
 
 class BookCategoryUpdate(BaseModel):
     """Book category model for updating categories."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
     name: Optional[str] = Field(None, min_length=1, max_length=100, description="Category name")
     description: Optional[str] = Field(None, description="Category description")
@@ -203,15 +213,20 @@ class BookCategory(BookCategoryBase):
 
     id: str = Field(..., description="Unique category identifier")
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
 
 class BookReviewBase(BaseModel):
     """Base book review model."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
     book_id: str = Field(..., description="ID of the book being reviewed")
     user_id: str = Field(..., description="ID of the user writing the review")
@@ -231,6 +246,11 @@ class BookReviewCreate(BookReviewBase):
 class BookReviewUpdate(BaseModel):
     """Book review model for updating reviews."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
     rating: Optional[float] = Field(None, ge=0, le=5, description="Review rating")
     title: Optional[str] = Field(None, min_length=1, max_length=200, description="Review title")
     content: Optional[str] = Field(None, min_length=1, description="Review content")
@@ -248,8 +268,8 @@ class BookReview(BookReviewBase):
     created_at: datetime = Field(..., description="Review creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Review last update timestamp")
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )

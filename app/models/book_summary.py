@@ -8,11 +8,16 @@ These summaries are automatically created using LangChain when books are added o
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
-from app.models.book import Book
+from app.models.book import Book, to_camel
 
 
 class BookSummaryBase(BaseModel):
     """Base model for AI-generated book summaries."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
     book_id: str = Field(..., description="Reference to the book")
 
@@ -85,6 +90,11 @@ class BookSummaryCreate(BookSummaryBase):
 class BookSummaryUpdate(BaseModel):
     """Model for updating existing book summaries."""
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
     short_summary: Optional[str] = Field(
         None, min_length=10, max_length=500, description="Short summary"
     )
@@ -112,7 +122,11 @@ class BookSummary(BookSummaryBase):
     created_at: datetime = Field(..., description="Summary creation timestamp")
     updated_at: datetime = Field(..., description="Summary last update timestamp")
 
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
 
 
 class BookWithSummary(Book):
@@ -127,6 +141,7 @@ class BookWithSummary(Book):
     model_config = ConfigDict(
         from_attributes=True,
         populate_by_name=True,
+        alias_generator=to_camel,
     )
 
 

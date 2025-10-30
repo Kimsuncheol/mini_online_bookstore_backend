@@ -9,9 +9,11 @@ Handles book-related operations including:
 - Stock management
 """
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, UploadFile, Request
 from fastapi.responses import StreamingResponse
 from typing import Optional, List
+from pydantic import ValidationError
+import json
 from app.models.book import (
     Book,
     BookCreate,
@@ -47,16 +49,16 @@ router = APIRouter(prefix="/api/books", tags=["books"])
 
 @router.post("", status_code=201)
 async def create_book(
-    book_data: BookCreate,
-    generate_summary: bool = Query(True, description="Auto-generate AI summary")
+    request: Request,
+    generate_summary: bool = Query(True, description="Auto-generate AI summary"),
 ):
     """
     Create a new book in the bookstore.
     Automatically generates AI-powered summary by default.
 
     Args:
-        book_data (BookCreate): The book data to create
         generate_summary (bool): Whether to generate AI summary (default: True)
+        request (Request): Incoming HTTP request containing book data and optional PDF file
 
     Returns:
         Book: The created book with ID
@@ -65,9 +67,76 @@ async def create_book(
         HTTPException: 400 if invalid data, 500 if database error occurs
     """
     try:
+        pdf_file: Optional[UploadFile] = None
+        raw_book_data: Optional[object] = None
+
+        content_type = request.headers.get("content-type", "")
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+
+            # Accept common field aliases from various clients
+            for candidate_key in ("book_data", "bookData", "book", "payload", "data"):
+                if candidate_key in form:
+                    potential_payload = form.get(candidate_key)
+                    if isinstance(potential_payload, str):
+                        raw_book_data = potential_payload
+                    break
+
+            if raw_book_data is None:
+                for value in form.values():
+                    if isinstance(value, str) and value.strip().startswith("{"):
+                        raw_book_data = value
+                        break
+
+            # Look for an uploaded PDF file using flexible key matching
+            for file_key in ("pdf_file", "pdfFile", "pdf", "file", "upload"):
+                if file_key in form:
+                    potential_file = form.get(file_key)
+                    if isinstance(potential_file, UploadFile):
+                        pdf_file = potential_file
+                    break
+
+            if not pdf_file:
+                for value in form.values():
+                    if isinstance(value, UploadFile):
+                        pdf_file = value
+                        break
+        else:
+            try:
+                raw_book_data = await request.json()
+            except json.JSONDecodeError as json_error:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {str(json_error)}")
+
+        if raw_book_data is None:
+            raise HTTPException(status_code=400, detail="Missing book_data payload")
+
+        if isinstance(raw_book_data, str):
+            try:
+                parsed_book_data = BookCreate.model_validate_json(raw_book_data)
+            except ValidationError as validation_error:
+                raise HTTPException(status_code=422, detail=validation_error.errors())
+        elif isinstance(raw_book_data, dict):
+            try:
+                parsed_book_data = BookCreate.model_validate(raw_book_data)
+            except ValidationError as validation_error:
+                raise HTTPException(status_code=422, detail=validation_error.errors())
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported book_data format")
+
+        if pdf_file and pdf_file.content_type and "pdf" not in pdf_file.content_type.lower():
+            raise HTTPException(status_code=400, detail="Uploaded file must be a PDF")
+
         book_service = get_book_service()
-        book = await book_service.create_book(book_data, generate_summary=generate_summary)
-        return book.model_dump()
+        book = await book_service.create_book(
+            parsed_book_data,
+            generate_summary=generate_summary,
+            pdf_file=pdf_file,
+        )
+        return book.model_dump(by_alias=True)
+    except ValueError as value_error:
+        raise HTTPException(status_code=400, detail=str(value_error))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating book: {str(e)}")
 
@@ -93,7 +162,7 @@ async def get_book(book_id: str = Path(..., description="The book ID")):
         if book is None:
             raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found")
 
-        return book.model_dump()
+        return book.model_dump(by_alias=True)
     except HTTPException:
         raise
     except Exception as e:
@@ -164,7 +233,7 @@ async def get_all_books(limit: Optional[int] = Query(None, ge=1, le=100)):
     try:
         book_service = get_book_service()
         books = book_service.get_all_books(limit=limit)
-        return [book.model_dump() for book in books]
+        return [book.model_dump(by_alias=True) for book in books]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching books: {str(e)}")
 
@@ -207,7 +276,7 @@ async def update_book(
         if updated_book is None:
             raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found")
 
-        return updated_book.model_dump()
+        return updated_book.model_dump(by_alias=True)
     except HTTPException:
         raise
     except Exception as e:
@@ -273,7 +342,7 @@ async def search_books(filters: BookFilterOptions):
         result = book_service.search_books(filters)
 
         return {
-            "books": [book.model_dump() for book in result["books"]],
+            "books": [book.model_dump(by_alias=True) for book in result["books"]],
             "total": result["total"],
             "page": result["page"],
             "limit": result["limit"],
@@ -304,7 +373,7 @@ async def get_books_by_genre(
     try:
         book_service = get_book_service()
         books = book_service.get_books_by_genre(genre, limit=limit)
-        return [book.model_dump() for book in books]
+        return [book.model_dump(by_alias=True) for book in books]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching books by genre: {str(e)}")
 
@@ -326,7 +395,7 @@ async def get_featured_books(limit: Optional[int] = Query(10, ge=1, le=100)):
     try:
         book_service = get_book_service()
         books = book_service.get_featured_books(limit=limit)
-        return [book.model_dump() for book in books]
+        return [book.model_dump(by_alias=True) for book in books]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching featured books: {str(e)}")
 
@@ -348,7 +417,7 @@ async def get_new_releases(limit: Optional[int] = Query(10, ge=1, le=100)):
     try:
         book_service = get_book_service()
         books = book_service.get_new_releases(limit=limit)
-        return [book.model_dump() for book in books]
+        return [book.model_dump(by_alias=True) for book in books]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching new releases: {str(e)}")
 
@@ -381,7 +450,7 @@ async def update_book_stock(
         if updated_book is None:
             raise HTTPException(status_code=404, detail=f"Book with ID '{book_id}' not found")
 
-        return updated_book.model_dump()
+        return updated_book.model_dump(by_alias=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -410,7 +479,7 @@ async def create_category(category_data: BookCategoryCreate):
     try:
         book_service = get_book_service()
         category = book_service.create_category(category_data)
-        return category.model_dump()
+        return category.model_dump(by_alias=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating category: {str(e)}")
 
@@ -429,7 +498,7 @@ async def get_all_categories():
     try:
         book_service = get_book_service()
         categories = book_service.get_all_categories()
-        return [category.model_dump() for category in categories]
+        return [category.model_dump(by_alias=True) for category in categories]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching categories: {str(e)}")
 
@@ -464,7 +533,7 @@ async def update_category(
                 status_code=404, detail=f"Category with ID '{category_id}' not found"
             )
 
-        return updated_category.model_dump()
+        return updated_category.model_dump(by_alias=True)
     except HTTPException:
         raise
     except Exception as e:
@@ -493,7 +562,7 @@ async def create_review(review_data: BookReviewCreate):
     try:
         book_service = get_book_service()
         review = await book_service.create_review(review_data)
-        return review.model_dump()
+        return review.model_dump(by_alias=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating review: {str(e)}")
 
@@ -515,7 +584,7 @@ async def get_book_reviews(book_id: str = Path(..., description="The book ID")):
     try:
         book_service = get_book_service()
         reviews = book_service.get_reviews_for_book(book_id)
-        return [review.model_dump() for review in reviews]
+        return [review.model_dump(by_alias=True) for review in reviews]
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error fetching reviews for book: {str(e)}"

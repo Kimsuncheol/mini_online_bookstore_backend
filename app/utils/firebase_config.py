@@ -58,7 +58,11 @@ class FirebaseConfig:
         cls._using_mock = False
 
         use_mock = cls._is_truthy(os.getenv("FIREBASE_USE_MOCK"))
-        credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+        credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH") or os.getenv(
+            "GOOGLE_APPLICATION_CREDENTIALS"
+        )
+        storage_bucket = os.getenv("FIREBASE_STORAGE_BUCKET")
+        app_options = {"storageBucket": storage_bucket} if storage_bucket else None
 
         try:
             if not use_mock and credentials_path:
@@ -69,7 +73,7 @@ class FirebaseConfig:
                     )
 
                 cred = credentials.Certificate(credentials_path)
-                cls._app = firebase_admin.initialize_app(cred)
+                cls._app = firebase_admin.initialize_app(cred, app_options)
                 cls._db = firestore.client()
                 print(f"✓ Firebase initialized using credentials file: {credentials_path}")
             elif not use_mock:
@@ -93,7 +97,7 @@ class FirebaseConfig:
                     )
 
                 cred = credentials.Certificate(service_account_config)
-                cls._app = firebase_admin.initialize_app(cred)
+                cls._app = firebase_admin.initialize_app(cred, app_options)
                 cls._db = firestore.client()
                 print("✓ Firebase initialized using environment variables")
             else:
