@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.utils.firebase_config import init_firebase
-from app.routers import websocket, cart, books, auth, member, advertisements, payments, like, ai_search, author, check_in, coupon
+from app.routers import websocket, cart, books, auth, member, advertisements, payments, like, ai_search, author, check_in, coupon, search
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -52,6 +52,7 @@ app.include_router(ai_search.router)
 app.include_router(author.router)
 app.include_router(check_in.router)
 app.include_router(coupon.router)
+app.include_router(search.router)
 
 
 @app.get("/")

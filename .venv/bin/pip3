@@ -1,4 +1,4 @@
-#!/Users/gimseoncheol/Desktop/mini_online_bookstore_backend/.venv/bin/python3.12
+#!/Users/gimseoncheol/Desktop/mini_online_bookstore_backend/.venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
