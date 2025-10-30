@@ -49,6 +49,7 @@ async def search(request: SearchRequest) -> SearchResponse:
     Returns:
         SearchResponse with results, suggestions, and metadata
     """
+
     try:
         response = await search_service.search(request)
         return response
@@ -56,41 +57,41 @@ async def search(request: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
 
 
-@router.get("/history/{user_id}", response_model=List[SearchHistoryItem])
+@router.get("/history/{user_email}", response_model=List[SearchHistoryItem])
 def get_search_history(
-    user_id: str,
+    user_email: str,
     limit: Optional[int] = Query(20, ge=1, le=100),
 ) -> List[SearchHistoryItem]:
     """
     Get search history for a user.
 
     Args:
-        user_id: User ID
+        user_email: User email
         limit: Maximum number of history items to return
 
     Returns:
         List of search history items
     """
     try:
-        history = search_service.get_search_history(user_id, limit)
+        history = search_service.get_search_history(user_email, limit)
         return history
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving history: {str(e)}")
 
 
-@router.delete("/history/{user_id}")
-def clear_search_history(user_id: str) -> dict:
+@router.delete("/history/{user_email}")
+def clear_search_history(user_email: str) -> dict:
     """
     Clear search history for a user.
 
     Args:
-        user_id: User ID
+        user_email: User email
 
     Returns:
         Status message
     """
     try:
-        success = search_service.clear_search_history(user_id)
+        success = search_service.clear_search_history(user_email)
         if success:
             return {"message": "Search history cleared successfully"}
         else:

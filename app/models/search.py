@@ -28,7 +28,7 @@ class SearchHistoryItem(BaseModel):
     Search history item model.
 
     Represents a record of a search query performed by a user.
-    Stored in the 'books' collection under 'search_history' subcollection.
+    Aligned with client-side SearchHistoryItem interface from Next.js.
     """
 
     model_config = ConfigDict(
@@ -38,12 +38,10 @@ class SearchHistoryItem(BaseModel):
 
     id: str = Field(..., description="Unique search history item identifier")
     query: str = Field(..., min_length=1, max_length=500, description="The search query performed")
-    timestamp: datetime = Field(..., description="When the search was performed")
-    user_id: Optional[str] = Field(None, description="ID of the user who performed the search")
-    result_count: int = Field(default=0, ge=0, description="Number of results found")
-    search_type: Optional[Literal["all", "books", "authors", "categories"]] = Field(
-        default="all", description="Type of search performed"
-    )
+    timestamp: int = Field(..., description="When the search was performed (Unix timestamp in milliseconds)")
+    user_email: Optional[str] = Field(None, description="Email of the user who performed the search")
+    search_type: Optional[str] = Field(None, description="Type of search performed (all, books, authors, categories)")
+    result_count: Optional[int] = Field(None, ge=0, description="Number of results found")
 
 
 class SearchHistoryCreate(BaseModel):
@@ -55,11 +53,10 @@ class SearchHistoryCreate(BaseModel):
     )
 
     query: str = Field(..., min_length=1, max_length=500, description="The search query")
-    user_id: Optional[str] = Field(None, description="User ID")
-    result_count: int = Field(default=0, ge=0, description="Number of results found")
-    search_type: Optional[Literal["all", "books", "authors", "categories"]] = Field(
-        default="all", description="Type of search"
-    )
+    timestamp: int = Field(..., description="When the search was performed (Unix timestamp in milliseconds)")
+    user_email: Optional[str] = Field(None, description="Email of the user who performed the search")
+    search_type: Optional[str] = Field(None, description="Type of search performed")
+    result_count: Optional[int] = Field(None, ge=0, description="Number of results found")
 
 
 # ==================== SEARCH RESULTS ====================
@@ -71,6 +68,7 @@ class SearchResult(BaseModel):
 
     Represents a single result from a search operation.
     Can be a book, author, or category.
+    Aligned with client-side SearchResult interface from Next.js.
     """
 
     model_config = ConfigDict(
@@ -84,13 +82,10 @@ class SearchResult(BaseModel):
         ..., description="Type of search result"
     )
     subtitle: Optional[str] = Field(None, description="Subtitle or secondary title")
-    image_url: Optional[str] = Field(None, description="Image URL for the result")
-    url: str = Field(..., description="URL/path to access the result")
-    relevance_score: Optional[float] = Field(
-        None, ge=0, le=1, description="Relevance score calculated by search algorithm (0-1)"
-    )
-    description: Optional[str] = Field(None, description="Short description of the result")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata about the result")
+    description: Optional[str] = Field(None, description="Description of the result")
+    image: Optional[str] = Field(None, description="Image URL for the result (renamed from image_url)")
+    url: Optional[str] = Field(None, description="URL/path to access the result")
+    score: Optional[float] = Field(None, ge=0, le=1, description="Relevance score (renamed from relevance_score)")
 
 
 class SearchResultCollection(BaseModel):
@@ -119,6 +114,7 @@ class SearchSettings(BaseModel):
     Search settings model.
 
     Configuration for search functionality behavior.
+    Aligned with client-side SearchSettings interface from Next.js.
     """
 
     model_config = ConfigDict(
@@ -128,18 +124,6 @@ class SearchSettings(BaseModel):
 
     history_enabled: bool = Field(
         default=True, description="Whether to save search history"
-    )
-    fuzzy_matching: bool = Field(
-        default=True, description="Whether to use fuzzy matching for typo tolerance"
-    )
-    include_suggestions: bool = Field(
-        default=True, description="Whether to include AI-based search suggestions"
-    )
-    fuzzy_threshold: float = Field(
-        default=0.6, ge=0, le=1, description="Minimum similarity score for fuzzy matching (0-1)"
-    )
-    max_suggestions: int = Field(
-        default=5, ge=1, le=20, description="Maximum number of suggestions to return"
     )
 
 
@@ -151,6 +135,7 @@ class SearchRequest(BaseModel):
     Search request model.
 
     Used for initiating a search operation.
+    Aligned with client-side SearchRequest interface from Next.js.
     """
 
     model_config = ConfigDict(
@@ -165,15 +150,24 @@ class SearchRequest(BaseModel):
     search_type: Optional[Literal["all", "books", "authors", "categories"]] = Field(
         default="all", description="Type of search to perform"
     )
+    page: int = Field(default=1, ge=1, description="Page number for pagination")
+    page_size: int = Field(default=20, ge=1, le=100, description="Results per page")
+    user_email: Optional[str] = Field(None, description="User email for personalized search")
+
+
+class SearchRequestInternal(SearchRequest):
+    """
+    Extended search request model for internal use.
+
+    Includes additional fields like filters and settings that are not exposed in the public API.
+    """
+
     filters: Optional[Dict[str, Any]] = Field(
         None, description="Additional search filters (genre, price range, etc.)"
     )
     settings: Optional[SearchSettings] = Field(
         None, description="Search settings configuration"
     )
-    page: int = Field(default=1, ge=1, description="Page number for pagination")
-    page_size: int = Field(default=20, ge=1, le=100, description="Results per page")
-    user_id: Optional[str] = Field(None, description="User ID for personalized search")
 
 
 # ==================== SEARCH RESPONSES ====================
@@ -184,6 +178,7 @@ class SearchResponse(BaseModel):
     Search response model.
 
     Complete response from a search operation.
+    Aligned with client-side SearchResponse interface from Next.js.
     """
 
     model_config = ConfigDict(
@@ -191,23 +186,19 @@ class SearchResponse(BaseModel):
         alias_generator=to_camel,
     )
 
-    success: bool = Field(default=True, description="Whether the search was successful")
+    query: str = Field(..., description="The search query that was executed")
     results: List[SearchResult] = Field(
         default_factory=list, description="List of search results"
     )
-    total_count: int = Field(
-        default=0, ge=0, description="Total number of results found"
-    )
-    suggested_keywords: Optional[List[str]] = Field(
+    suggestions: Optional[List[str]] = Field(
         None, description="AI-suggested keywords or search refinements"
     )
-    processing_time_ms: int = Field(
-        default=0, ge=0, description="Time taken to process search in milliseconds"
+    total: int = Field(
+        default=0, ge=0, description="Total number of results found"
     )
     page: int = Field(default=1, ge=1, description="Current page number")
     page_size: int = Field(default=20, ge=1, le=100, description="Results per page")
     has_more: bool = Field(default=False, description="Whether there are more results available")
-    error: Optional[str] = Field(None, description="Error message if search failed")
 
 
 # ==================== FUZZY SEARCH ====================
@@ -256,7 +247,7 @@ class SearchAnalytics(BaseModel):
     query: str = Field(..., description="The search query")
     result_count: int = Field(default=0, ge=0, description="Number of results found")
     processing_time_ms: int = Field(default=0, ge=0, description="Processing time in milliseconds")
-    user_id: Optional[str] = Field(None, description="User who performed search")
+    user_email: Optional[str] = Field(None, description="Email of user who performed search")
     search_type: Literal["all", "books", "authors", "categories"] = Field(
         default="all", description="Type of search"
     )

@@ -16,10 +16,12 @@ Storage Structure:
 import time
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
+import math
 from google.cloud.firestore import DocumentSnapshot
 
 from app.models.search import (
     SearchRequest,
+    SearchRequestInternal,
     SearchResponse,
     SearchResult,
     SearchHistoryItem,
@@ -81,11 +83,7 @@ class SearchService:
             query = request.query.strip()
 
             if not query:
-                return SearchResponse(
-                    success=False,
-                    error="Search query cannot be empty",
-                    processing_time_ms=0,
-                )
+                raise ValueError("Search query cannot be empty")
 
             # Fetch all books (in production, this might be optimized)
             all_books = self.book_service.get_all_books(limit=None)
@@ -93,7 +91,7 @@ class SearchService:
             # Perform search based on search type
             results = []
             if request.search_type == "books" or request.search_type == "all":
-                results.extend(self._search_books(query, all_books, request.filters))
+                results.extend(self._search_books(query, all_books, filters=None))
 
             if request.search_type == "authors" or request.search_type == "all":
                 results.extend(self._search_authors(query, all_books))
@@ -102,7 +100,7 @@ class SearchService:
                 results.extend(self._search_categories(query, all_books))
 
             # Sort results by relevance score
-            results.sort(key=lambda x: x.relevance_score or 0, reverse=True)
+            results.sort(key=lambda x: x.score or 0, reverse=True)
 
             # Calculate total count before pagination
             total_count = len(results)
@@ -112,51 +110,50 @@ class SearchService:
             end_idx = start_idx + request.page_size
             paginated_results = results[start_idx:end_idx]
 
-            # Get AI suggestions if enabled
-            suggested_keywords = []
-            if request.settings and request.settings.include_suggestions:
-                suggested_keywords = await self._get_suggested_keywords(
-                    query, paginated_results
-                )
+            # Get AI suggestions (always enabled for now)
+            suggested_keywords = await self._get_suggested_keywords(
+                query, paginated_results
+            )
 
             processing_time = int((time.time() - start_time) * 1000)
 
-            # Save search history if enabled
-            if request.settings and request.settings.history_enabled:
-                await self._save_search_history(
-                    query=query,
-                    user_id=request.user_id,
-                    result_count=total_count,
-                    search_type=request.search_type,
-                )
+            # Save search history (always enabled for now)
+            await self._save_search_history(
+                query=query,
+                user_email=request.user_email,
+            )
 
             # Save analytics
             await self._save_search_analytics(
                 query=query,
                 result_count=total_count,
                 processing_time_ms=processing_time,
-                user_id=request.user_id,
+                user_email=request.user_email,
                 search_type=request.search_type,
                 had_results=total_count > 0,
             )
 
             return SearchResponse(
-                success=True,
+                query=query,
                 results=paginated_results,
-                total_count=total_count,
-                suggested_keywords=suggested_keywords[:5],  # Top 5 suggestions
-                processing_time_ms=processing_time,
+                total=total_count,
+                suggestions=suggested_keywords[:5] if suggested_keywords else None,
                 page=request.page,
                 page_size=request.page_size,
                 has_more=(start_idx + request.page_size) < total_count,
             )
 
         except Exception as e:
-            processing_time = int((time.time() - start_time) * 1000)
+            print(f"Search error: {str(e)}")
+            # Return empty response on error
             return SearchResponse(
-                success=False,
-                error=f"Search error: {str(e)}",
-                processing_time_ms=processing_time,
+                query=query if query else "",
+                results=[],
+                total=0,
+                suggestions=None,
+                page=request.page if hasattr(request, 'page') else 1,
+                page_size=request.page_size if hasattr(request, 'page_size') else 20,
+                has_more=False,
             )
 
     # ==================== BOOK SEARCH ====================
@@ -215,17 +212,10 @@ class SearchService:
                         title=book.title,
                         type="book",
                         subtitle=book.author,
-                        image_url=book.cover_image_url,
-                        url=f"/books/{book.id}",
-                        relevance_score=round(relevance_score, 3),
                         description=book.description,
-                        metadata={
-                            "author": book.author,
-                            "genre": book.genre,
-                            "price": book.price,
-                            "rating": book.rating,
-                            "in_stock": book.in_stock,
-                        },
+                        image=book.cover_image_url,
+                        url=f"/books/{book.id}",
+                        score=round(relevance_score, 3),
                     )
                 )
 
@@ -269,8 +259,7 @@ class SearchService:
                     title=author,
                     type="author",
                     url=f"/authors/{author.lower().replace(' ', '_')}",
-                    relevance_score=round(score, 3),
-                    metadata={"author_name": author},
+                    score=round(score, 3),
                 )
             )
 
@@ -313,8 +302,7 @@ class SearchService:
                     title=category,
                     type="category",
                     url=f"/categories/{category.lower().replace(' ', '_')}",
-                    relevance_score=round(score, 3),
-                    metadata={"category_name": category},
+                    score=round(score, 3),
                 )
             )
 
@@ -364,52 +352,50 @@ class SearchService:
     async def _save_search_history(
         self,
         query: str,
-        user_id: Optional[str],
-        result_count: int,
-        search_type: str = "all",
+        user_email: Optional[str],
     ) -> None:
         """
         Save search query to history.
 
         Args:
             query: Search query
-            user_id: User ID (optional)
-            result_count: Number of results found
-            search_type: Type of search performed
+            user_email: User email (optional)
         """
         try:
-            if not user_id:
-                user_id = "anonymous"
+            if not user_email:
+                user_email = "anonymous"
+
+            # Convert current time to Unix timestamp in milliseconds
+            timestamp_ms = int(datetime.now().timestamp() * 1000)
 
             history_item = SearchHistoryCreate(
                 query=query,
-                user_id=user_id,
-                result_count=result_count,
-                search_type=search_type,
+                timestamp=timestamp_ms,
+                user_email=user_email,
             )
 
             # Save to Firestore
             history_ref = (
                 self.db.collection(self.SEARCH_HISTORY_COLLECTION)
-                .document(user_id)
+                .document(user_email)
                 .collection("queries")
                 .document()
             )
-            history_ref.set(history_item.model_dump() | {"timestamp": datetime.now()})
+            history_ref.set(history_item.model_dump())
 
         except Exception as e:
             print(f"Warning: Failed to save search history: {str(e)}")
 
     def get_search_history(
         self,
-        user_id: str,
+        user_email: str,
         limit: int = 20,
     ) -> List[SearchHistoryItem]:
         """
         Retrieve search history for a user.
 
         Args:
-            user_id: User ID
+            user_email: User email
             limit: Maximum number of records to return
 
         Returns:
@@ -418,7 +404,7 @@ class SearchService:
         try:
             docs = (
                 self.db.collection(self.SEARCH_HISTORY_COLLECTION)
-                .document(user_id)
+                .document(user_email)
                 .collection("queries")
                 .order_by("timestamp", direction="DESCENDING")
                 .limit(limit)
@@ -432,10 +418,8 @@ class SearchService:
                     SearchHistoryItem(
                         id=doc.id,
                         query=data.get("query", ""),
-                        timestamp=data.get("timestamp", datetime.now()),
-                        user_id=user_id,
-                        result_count=data.get("result_count", 0),
-                        search_type=data.get("search_type", "all"),
+                        timestamp=data.get("timestamp", int(datetime.now().timestamp() * 1000)),
+                        user_email=user_email,
                     )
                 )
 
@@ -452,7 +436,7 @@ class SearchService:
         query: str,
         result_count: int,
         processing_time_ms: int,
-        user_id: Optional[str],
+        user_email: Optional[str],
         search_type: str,
         had_results: bool,
     ) -> None:
@@ -463,7 +447,7 @@ class SearchService:
             query: Search query
             result_count: Number of results found
             processing_time_ms: Processing time in milliseconds
-            user_id: User ID (optional)
+            user_email: User email (optional)
             search_type: Type of search
             had_results: Whether search returned results
         """
@@ -473,7 +457,7 @@ class SearchService:
                 query=query,
                 result_count=result_count,
                 processing_time_ms=processing_time_ms,
-                user_id=user_id,
+                user_email=user_email,
                 search_type=search_type,
                 had_results=had_results,
                 timestamp=datetime.now(),
@@ -529,12 +513,12 @@ class SearchService:
 
     # ==================== UTILITY METHODS ====================
 
-    def clear_search_history(self, user_id: str) -> bool:
+    def clear_search_history(self, user_email: str) -> bool:
         """
         Clear all search history for a user.
 
         Args:
-            user_id: User ID
+            user_email: User email
 
         Returns:
             True if successful, False otherwise
@@ -542,7 +526,7 @@ class SearchService:
         try:
             docs = (
                 self.db.collection(self.SEARCH_HISTORY_COLLECTION)
-                .document(user_id)
+                .document(user_email)
                 .collection("queries")
                 .stream()
             )
